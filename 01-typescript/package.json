@@ -1,0 +1,22 @@
+{
+  "name": "typescript-advanced-course",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.5"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "type-check:watch": "tsc --noEmit --watch",
+    "dev": "tsx watch src/01-type-system/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  }
+}
