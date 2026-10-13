@@ -1,23 +1,17 @@
-type OrderStatus = 'pending' | 'processing' | 'complete' | 'removed';
-
-type OrderItem = {
-    id: number;
+export interface OrderItem {
     productId: number;
     qty: number;
     price: number;
 }
 
-type Order = {
+export interface Order {
     id: number;
-    items: OrderItem[] | []
+    items: readonly OrderItem[];
 }
 
 
-export default function calculateTotalOrder(order: Order) {
-    if (!order || !Object.keys(order).length || !Array.isArray(order.items) || order.items.length === 0) {
-        return 0;
-    }
-
-    const items: OrderItem[] = order.items;
-    return items.reduce((t: number = 0, item: OrderItem) => t + item.price * item.qty, 0);
+export function calculateOrderTotal(order: Order): number {
+    // nên để trả về tường minh để nếu trả về chuỗi hoặc thiếu return ,ts báo lỗi ngay
+    return order.items
+        .reduce((t, item) => t + Math.round(item.price * item.qty * 100) / 100, 0);
 }
