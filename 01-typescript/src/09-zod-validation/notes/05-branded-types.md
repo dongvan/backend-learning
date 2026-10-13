@@ -92,6 +92,24 @@ const bad: Slug = "x";
 
 **Brand chỉ hiệu lực lúc biên dịch.** `ArticleId.safeParse("").success` là `false` vì có `.min(1)`; nhưng nếu bạn dùng `as ArticleId` ở đâu đó, runtime không biết. Brand không thay thế validate, nó *ghi lại* rằng validate đã diễn ra.
 
+**Thông báo lỗi của compiler khi vi phạm brand** (đã chạy với `tsc` 7.0.2, `UserId` và `OrderId` đều là `z.uuid().brand<...>()`):
+
+```text
+loadUser("abc");
+  error TS2345: Argument of type 'string' is not assignable to parameter of type 'string & $brand<"UserId">'.
+loadUser(orderId);
+  error TS2345: Argument of type 'string & $brand<"OrderId">' is not assignable to parameter of type 'string & $brand<"UserId">'.
+const bad: UserId[] = ["a"];
+  error TS2322: Type 'string' is not assignable to type 'string & $brand<"UserId">'.
+    Type 'string' is not assignable to type '$brand<"UserId">'.
+```
+
+Cách đọc: phần `string & $brand<"X">` là kiểu giao (intersection) của `string` với một "dấu" chỉ có ở kiểu. Lỗi thứ hai cho thấy hai brand khác nhau không thay thế nhau dù cùng nền `string`. Brand làm khoá `Record` cũng vô dụng: `Record<UserId, number>` không nhận literal `{ abc: 1 }` (`TS2353: Object literal may only specify known properties`), vì khoá object luôn là `string`/`symbol` thuần. Muốn map theo id, dùng `Map<UserId, V>`.
+
+**`as` vẫn rèn được brand.** `"x" as UserId` biên dịch bình thường (đã kiểm: không có lỗi), nên brand chỉ mạnh bằng kỷ luật "không `as`". Có thể thêm quy tắc lint `no-restricted-syntax` hoặc review để cấm `as <TênBrand>` ngoài file schema (repo này không có lint; đây là gợi ý).
+
+**Brand không sống qua JSON, `structuredClone`, hay ORM.** Giá trị đọc ra từ DB là `string` thường; muốn có lại brand phải `parse` (hoặc có một hàm "tin cậy" duy nhất ở tầng repository, nơi bạn hiểu rõ rằng DB đã ràng buộc dữ liệu, ví dụ cột kiểu `uuid`).
+
 **Khi nào đáng dùng.**
 
 | Đáng | Không đáng |

@@ -78,6 +78,29 @@ Hiểu thông điệp: cờ này muốn đầu ra giống hệt đầu vào. V�
 
 **`import type` và class dùng cho DI.** Cạm bẫy hệ NestJS (Phase 03): `emitDecoratorMetadata` cần class ở dạng giá trị, nên `import type { UserService }` làm DI hỏng (Nest không thấy class). Ở phase đó, import class dùng cho injection phải là import thường. Chỉ ghi nhận ở đây, chưa thử trong repo này.
 
+**Lỗi ngược chiều: dùng `import type` rồi dùng như giá trị.** Đã thử:
+
+```text
+import type { Svc } from "./svc.js";     // Svc là class
+export const s = new Svc();
+-> TS1361: 'Svc' cannot be used as a value because it was imported using 'import type'.
+```
+
+Class vừa là kiểu vừa là giá trị, nên `import { Svc }` thường (không `type`) hợp lệ dưới `verbatimModuleSyntax` (đã thử: không lỗi khi chỉ dùng `Svc` làm kiểu tham số). `TS1484` chỉ xuất hiện với thứ **thuần kiểu** (`interface`, `type`). Quy tắc: `interface`/`type` thì `import type`; class dùng lúc chạy (`new`, `instanceof`, decorator) thì import thường.
+
+**Node chạy `.ts` trực tiếp cho thấy rõ vấn đề "xoá kiểu từng file"** (Node 24.21, đã thử):
+
+```text
+// types.ts: export interface User {...}; export const make = ...
+import { make, User } from "./types.ts";       -> SyntaxError: The requested module './types.ts' does not provide an export named 'User'
+import { make, type User } from "./types.ts";  -> chạy được
+class P { constructor(private x: number) {} }  -> ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX: TypeScript parameter property is not supported in strip-only mode
+import { make } from "./types";                -> ERR_MODULE_NOT_FOUND (thiếu đuôi)
+import { make } from "@/types.ts";             -> ERR_MODULE_NOT_FOUND: Cannot find package '@/types.ts' (không đọc `paths`)
+```
+
+Dòng đầu chính xác là lỗi mà `verbatimModuleSyntax` chặn từ lúc type-check. Lưu ý Node import đuôi `.ts` (khác quy ước `.js` của `tsc`): chạy trực tiếp bằng Node và build bằng `tsc` đòi hai quy ước khác nhau, một lý do để chọn một con đường và bám theo (xem `05-toolchain-tsx-tsc-vitest.md`).
+
 ## Tricks & tips thực tế
 
 - **Bật `verbatimModuleSyntax` cho dự án ESM mới.** Lý do: rõ ràng nhất, một dòng `import` nói thẳng nó sống lúc runtime hay không, và không còn bất ngờ giữa `tsc`, `tsx`, Vitest.

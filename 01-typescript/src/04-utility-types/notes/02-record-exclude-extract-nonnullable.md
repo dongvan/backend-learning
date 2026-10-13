@@ -102,6 +102,8 @@ type Handlers = { [E in Ev as `on${Capitalize<E>}`]: () => void };
 
 Cú pháp `as` trong mapped type (key remapping) cần TS 4.1+; sẽ học ở Bài 5.
 
+**Vài trường hợp biên (đã kiểm chứng).** `Exclude<boolean, true>` là `false` vì `boolean` là `true | false`; `Exclude<"a", "a">` là `never`; `NonNullable<unknown>` là `{}` (mọi giá trị trừ `null`/`undefined`, không phải "object rỗng"); `Record<string, number>` vẫn thấy `"toString" in obj` là `true` lúc runtime vì khoá thừa kế từ prototype (`Object.hasOwn` cho `false`). Chi tiết ở file 5.
+
 ## Tricks & tips thực tế
 
 - **Dùng `Record<UnionKey, V>` thay cho `switch` khi chỉ tra bảng.** Lý do: thêm khoá mới vào union bắt buộc cập nhật bảng, và bảng ngắn hơn `switch`. Với logic phức tạp theo từng nhánh, vẫn dùng `switch` + `assertNever`.

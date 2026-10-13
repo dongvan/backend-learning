@@ -135,6 +135,46 @@ const Tags = z.array(z.string()).superRefine((arr, ctx) => {
 
 **So sánh với Laravel.** `prepareForValidation()` tương ứng `preprocess`/`transform`; rule `confirmed` tương ứng refine so khớp; `sometimes`, `nullable` tương ứng `optional`, `nullable`. Khác biệt: Laravel validate xong vẫn trả giá trị gốc (chuỗi `"3"`), còn Zod trả giá trị **đã ép/đã biến đổi**, nên bạn không phải tự cast ở controller.
 
+**Bảng các giá trị "lạ" của `z.coerce.number()`** (đã chạy với Zod 4.6.5; vì nó gọi `Number(x)` nên kế thừa mọi quy tắc của JavaScript):
+
+| Input | Kết quả | Ghi chú |
+|---|---|---|
+| `"  "` (chỉ khoảng trắng) | `0` | không báo lỗi |
+| `"0x10"` | `16` | chuỗi hex được chấp nhận |
+| `"1e3"` | `1000` | ký hiệu khoa học được chấp nhận |
+| `[]` | `0` | mảng rỗng thành `0` |
+| `[5]` | `5` | mảng một phần tử cũng "ép" được |
+| `true` | `1` | boolean thành số |
+| `"abc"` | lỗi | `expected number, received NaN` |
+
+Hệ quả: `?page=0x10` thành trang 16, và `?limit=` (để trống) thành `0`. Chặn bằng `.min(1)`, hoặc nếu cần nghiêm ngặt hơn thì kiểm tra chuỗi bằng regex *trước* rồi mới chuyển: `z.string().regex(/^\d+$/).transform(Number)`.
+
+Các `coerce` khác cũng có bẫy riêng (đã chạy): `z.coerce.date().parse(null)` ra `1970-01-01T00:00:00.000Z` (vì `new Date(null)`), `z.coerce.string().parse(undefined)` ra chuỗi `"undefined"`, và `z.coerce.string().parse({ a: 1 })` ra `"[object Object]"`. Với `coerce.date`, input không parse được cho lỗi `expected date, received Date` (message đọc khó hiểu vì `Invalid Date` vẫn là `Date`).
+
+**`default` bỏ qua validation, `prefault` thì không (Zod 4).** Trong Zod 4, khi input là `undefined`, `.default(v)` trả thẳng `v` mà *không* chạy các luật phía trước; còn `.prefault(v)` đưa `v` vào như thể client đã gửi nó rồi mới validate:
+
+```ts
+z.object({ n: z.number().min(10).default(5) }).parse({});    // { n: 5 }  <- vi phạm min(10) mà vẫn qua
+z.object({ n: z.number().min(10).prefault(5) }).safeParse({}).success; // false
+```
+
+Điều này hợp lý (giá trị mặc định do chính bạn viết), nhưng là chỗ khác Zod 3. Sau `default`, các `transform` phía sau vẫn chạy: `z.string().default("x").transform((s) => s.toUpperCase())` cho `"X"`.
+
+**`default` không áp dụng cho chuỗi rỗng hay `null`.** `z.string().default("x").safeParse(null)` là lỗi. Với biến môi trường `PORT=` (khai báo nhưng rỗng), `z.coerce.number().int().min(1).default(3000)` *không* rơi về `3000`: `""` bị ép thành `0` rồi vi phạm `min(1)`. Muốn coi chuỗi rỗng là "không có", dùng `preprocess`:
+
+```ts
+const optionalNumber = (inner: z.ZodType<number>) =>
+  z.preprocess((v) => (v === "" ? undefined : v), inner.optional());
+```
+
+**Union và `coerce` (thứ tự quan trọng).** `z.union` thử từng nhánh theo thứ tự và lấy nhánh đầu thành công. Với `z.union([z.coerce.number(), z.string()])`, chuỗi `"5"` thành số `5` (nhánh đầu "nuốt" nó) còn `"abc"` giữ nguyên chuỗi (đã chạy). Đảo thứ tự là kết quả khác. Hạn chế `coerce` trong union; nếu cần "số hoặc chuỗi", hãy ghi rõ ý định bằng `z.union([z.number(), z.string()])`.
+
+**`.catch(v)` giấu lỗi.** `z.number().catch(0).parse("abc")` trả `0` mà không có lỗi nào (đã chạy). Hợp với dữ liệu *không quan trọng* (cờ giao diện tuỳ chọn), nguy hiểm với dữ liệu nghiệp vụ: client gửi sai mà không ai biết.
+
+**`default` trong PATCH là bẫy kinh điển.** `Settings.partial()` với trường có `.default("light")` **vẫn áp default** khi trường vắng mặt: `z.object({ theme: z.enum(["light", "dark"]).default("light"), name: z.string() }).partial().parse({})` cho `{ theme: "light" }` (đã chạy). Nếu bạn dùng kết quả đó để `UPDATE`, một request PATCH rỗng sẽ **đặt lại** `theme` về `"light"`. Cách tránh: schema PATCH dẫn xuất từ schema *không có `default`*; chỉ schema tạo mới mới thêm `default` (xem file 06).
+
+**Lỗi ném thẳng từ `refine`/`transform` không thành `ZodError`.** Nếu callback ném (bug, hay gọi `JSON.parse` hỏng), lỗi đó thoát nguyên vẹn: `z.string().refine(() => { throw new TypeError("bug") }).parse("x")` ném `TypeError`, không phải `ZodError` (đã chạy). Hệ quả tốt: ở ranh giới, `instanceof z.ZodError` chỉ gom lỗi *input*, còn bug rơi xuống nhánh 500. Muốn báo lỗi input từ trong `transform`, dùng `ctx.issues.push(...)` như trên chứ đừng `throw`.
+
 ## Tricks & tips thực tế
 
 - **Dùng `coerce` chỉ ở rìa chuỗi (query, params, env), không ở body JSON.** Lý do: JSON có số thật; coerce làm `""`/`null` lọt thành `0` và che lỗi của client.
@@ -147,6 +187,11 @@ const Tags = z.array(z.string()).superRefine((arr, ctx) => {
 - **Khi `z.input` lạ so với `z.output`, in cả hai kiểu ra** (gán thử giá trị vào biến có kiểu đó). Lý do: lỗi "tại sao hàm của mình yêu cầu `number` mà bên gọi truyền `string`" thường do nhầm input/output.
 - **Đừng dùng `default` để che dữ liệu thiếu mà nghiệp vụ bắt buộc.** Lý do: một client quên gửi `quantity` sẽ âm thầm nhận giá trị mặc định thay vì bị báo lỗi.
 - **`z.number()` từ chối `NaN`, còn `Infinity` thì `z.number()` cũng từ chối** (đã chạy: `safeParse(Infinity).success === false`). `z.int()` (Zod 4) hoặc `z.number().int()` để chỉ nhận số nguyên; với tiền, ưu tiên số nguyên đơn vị nhỏ nhất (xu) thay vì số thực.
+
+- **Schema PATCH dẫn xuất từ schema không có `default`.** Lý do: `partial()` vẫn áp `default`, nên PATCH rỗng âm thầm ghi đè dữ liệu hiện có bằng giá trị mặc định.
+- **Dùng `prefault` khi giá trị mặc định cũng phải qua luật** (ví dụ mặc định lấy từ cấu hình do người vận hành nhập). Lý do: `default` bỏ qua `min`/`max`, mặc định sai sẽ lọt vào hệ thống mà không ai kiểm.
+- **Với biến môi trường rỗng (`FOO=`), quyết định rõ nó nghĩa là "chưa đặt" hay "giá trị rỗng".** Lý do: dotenv/CI hay sinh ra chuỗi rỗng, `coerce.number` biến nó thành `0` và `default` không cứu được.
+- **Tránh `catch()` cho dữ liệu nghiệp vụ.** Lý do: nó xoá dấu vết lỗi; nếu cần giá trị dự phòng, hãy `safeParse` và ghi log rồi mới dùng giá trị dự phòng.
 
 ## Liên hệ bài tập
 

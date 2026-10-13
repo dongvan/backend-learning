@@ -33,6 +33,11 @@ describe("calculateFine", () => {
 
 **Vitest chạy thế nào.** `vitest run` tìm file `*.test.ts` / `*.spec.ts`, biên dịch từng file bằng bộ transform của Vite (chỉ gỡ kiểu, không phân tích kiểu), rồi chạy trong worker riêng. Quan trọng: bước này **xoá kiểu, không kiểm tra kiểu**. Test pass trong Vitest không có nghĩa `tsc` sạch. Vì vậy repo có cả `npm test` và `npm run type-check`, và cả hai đều phải xanh (xem ghi chú 4). Phiên bản đã cài trong repo: Vitest 5.x.
 
+**Phạm vi cô lập (đã kiểm chứng trên 5.0.3).**
+
+- Vitest mặc định **không** bật global: `it`/`expect` không import thì lỗi `ReferenceError: it is not defined` và cả suite fail. Luôn `import { describe, it, expect } from "vitest"`.
+- Module-level state **được chia sẻ giữa các test trong cùng một file** (test 1 tăng `state.n` thì test 2 thấy), nhưng **mỗi file test chạy trong môi trường module riêng**, nên hai file không thấy state của nhau. Hệ quả: biến toàn cục/singleton trong code chính (bộ đếm id, cache) làm các test cùng file ảnh hưởng nhau; domain thuần không có state toàn cục thì không gặp vấn đề này. Trong Laravel, mỗi request/test khởi động lại app container nên ít gặp; ở Node, module cache sống suốt cả file test.
+
 **Matcher hay dùng.**
 
 | Matcher | Dùng khi |
@@ -96,6 +101,9 @@ it("không mutate dữ liệu đầu vào", () => {
   expect(loan).toEqual(snapshot);
 });
 ```
+
+- **Chọn matcher đủ chặt**: `toEqual` bỏ qua thuộc tính `undefined` và không phân biệt class; `toStrictEqual` thì có. Chi tiết, kèm cạm bẫy `Error` và `Set`/`Map`, ở ghi chú 5. Lý do cần biết: test "xanh" với `toEqual` có thể che một DTO lộ thêm trường `undefined` hay trả nhầm kiểu.
+- **Đọc báo lỗi từ dưới lên**: dòng đầu là tên test, tiếp theo là matcher, sau cùng là diff. Nếu diff trông giống hệt, nghi ngờ khác tham chiếu (`toBe` thay vì `toEqual`), khác kiểu class, hoặc khác `undefined`/thiếu trường.
 
 ## Liên hệ bài tập
 

@@ -85,6 +85,11 @@ Dùng AI agent theo ROADMAP §7: nhờ review và chất vấn, nhưng phần vi
 - **Debug "test xanh nhưng sai"**: cố ý bẻ code (đảo điều kiện, đổi `>=` thành `>`) xem test nào đỏ. Không test nào đỏ nghĩa là thiếu test ở chỗ đó.
 - **Ghi lại quyết định** ngắn gọn (vì sao chọn số nguyên cho tiền, vì sao Order chứa OrderItem): vào "Ghi chú của bạn" hoặc PROGRESS khi bạn nộp. Lý do: bài kiểm tra cuối phase hỏi chính các quyết định này.
 
+- **Test hợp đồng cho repo, bao gồm "không rò tham chiếu sau `save`"**: ví dụ `describe.each` ở ghi chú 4 của Bài 11; lỗi rò đã được chạy thật ở ghi chú 6 mục 2 (`find` trả `999` sau khi sửa object chưa lưu lại). Lý do: bản in-memory sai hành vi khiến test xanh trên fake mà đỏ trên DB thật.
+- **Domain service không nên nhận "mọi thứ"**: nếu hàm cần 5 repo là dấu hiệu luật đang ôm nhiều aggregate hoặc là use case đang bị gọi nhầm là domain service. Tách thành bước nạp (application) và hàm luật thuần nhận dữ liệu đã nạp: dễ test hơn (không cần fake repo) và tránh N+1 truy vấn khi sang DB thật.
+- **Đọc nhiều aggregate để quyết định, nhưng chỉ ghi một aggregate mỗi lần**: luật "thành viên không mượn quá N cuốn" đọc nhiều phiếu nhưng chỉ lưu phiếu mới. Ghi nhiều aggregate cùng lúc đòi hỏi giao dịch và là dấu hiệu ranh giới aggregate có thể sai (xem ghi chú 6 về xung đột đồng thời).
+- **Đừng trả entity "một nửa" từ repo**: nếu kiểu trả về chứa trường `undefined` vì truy vấn không `select` đủ, các hàm domain sau đó tin kiểu nhưng thực tế thiếu dữ liệu. Trả đủ aggregate hoặc một kiểu "view" riêng cho truy vấn chỉ đọc.
+
 ### Checklist trước khi nộp (thuộc phần Tricks & tips)
 
 Không phải đáp án, mà là cách tự soát (lấy từ PLAN.md, ROADMAP §8 và các ghi chú trước):

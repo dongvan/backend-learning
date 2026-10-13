@@ -63,6 +63,13 @@ Chú ý: bên trong thân hàm vẫn phải `as` vì runtime là dữ liệu đ�
 
 **Chi phí.** Mỗi kiểu phức tạp tăng thời gian `tsc`, thời gian editor phản hồi, và độ dài thông báo lỗi. Với union lớn × đệ quy, thời gian có thể bùng nổ; nếu `npm run type-check` hoặc IDE chậm bất thường sau khi thêm một kiểu, kiểu đó là nghi can số một.
 
+**Các mã lỗi của đệ quy (đã kiểm chứng):**
+- `type Rep<N extends number, A extends unknown[] = []> = A["length"] extends N ? A : Rep<N, [...A, 0]>; const r: Rep<5000> = [];` báo **TS2589: Type instantiation is excessively deep and possibly infinite.**
+- `type Circ = Circ extends string ? 1 : 2;` báo **TS2456: Type alias 'Circ' circularly references itself.** (phân biệt với đệ quy hợp lệ: tham chiếu chính nó nằm trong thuộc tính/nhánh được trì hoãn, như `type Tree = { children: Tree[] }`.)
+- Khoảng 100.000 literal từ template union báo TS2590 (file 03 và file 05, mục 12).
+
+Ngưỡng cụ thể của TS2589 phụ thuộc dạng kiểu và phiên bản compiler; hãy đo trên kiểu thật của bạn thay vì nhớ một con số.
+
 ## Khi nào nên / không nên
 
 Nên:

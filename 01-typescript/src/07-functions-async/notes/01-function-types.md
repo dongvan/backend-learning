@@ -135,6 +135,35 @@ Với `strict` (cụ thể `noImplicitThis`), dùng `this` trong hàm thường 
 
 **Hàm generic** đã học ở Bài 3. Ở đây chỉ cần nhớ: kiểu hàm có thể chứa tham số kiểu, ví dụ `type Mapper = <T, U>(xs: T[], f: (x: T) => U) => U[]`. Vị trí đặt `<T>` quyết định khi nào `T` được cố định: trước tên hàm (cố định ở lúc gọi hàm), hay trên type alias (cố định ở lúc dùng alias).
 
+**Các lỗi compiler hay gặp ở chữ ký hàm** (đã thử trên TS 7.0.2 với cấu hình repo):
+
+```text
+TS1016: A required parameter cannot follow an optional parameter.
+        function g(a?: number, b: string) {}
+TS2554: Expected 1-2 arguments, but got 3.
+        two(1, 2, 3)  với  two(a: number, b?: number)
+TS2684: The 'this' context of type 'void' is not assignable to method's 'this' of type '{ n: number; }'.
+        const r = o.run; r();   // tách method có tham số `this: {...}` rồi gọi trần
+```
+
+Chú ý dòng cuối: nó chỉ báo khi method **tự khai báo** tham số `this`. Với method class bình thường không khai báo `this`, `const save = repo.save; [1].map(save)` **không lỗi** ở compile time (đã thử: `tsc` sạch) và sập lúc chạy với `TypeError: Cannot read properties of undefined (reading 'n')`. Khai báo `save(this: Repo, x: number)` giúp bắt lời gọi trần `const s = repo.save; s(1)` (đã thử), nhưng **không** bắt được `[1].map(s)`: kiểu callback của `map` không có tham số `this` nên việc gán không bị kiểm tra (đã thử, `tsc` sạch). Cách chắc chắn là dùng arrow function property (`save = (x: number) => ...`) để `this` gắn cố định theo instance, hoặc luôn bọc `(x) => repo.save(x)`.
+
+**Kiểu `Function` và `any`.** Một biến kiểu `Function` gọi được với bất kỳ đối số nào và trả `any` (đã thử: `const fn: Function = () => 1; fn(1, 2)` không lỗi). Vì vậy đừng dùng `Function`; viết rõ `(...args: never[]) => unknown` khi chỉ cần "một hàm nào đó", hoặc dùng generic `<A extends unknown[], R>(fn: (...args: A) => R)`.
+
+**Trích kiểu từ hàm có sẵn.** `Parameters<typeof f>` cho tuple tham số (giữ cả tên, ví dụ `[a: number, b: number]`), `ReturnType<typeof f>` cho kiểu trả về, và với hàm async phải bọc `Awaited`:
+
+```ts
+async function loadInvoice(id: number) {
+  return { id, total: 120_000, currency: "VND" as const };
+}
+
+type Invoice = Awaited<ReturnType<typeof loadInvoice>>;   // { id: number; total: number; currency: "VND" }
+type LoadArgs = Parameters<typeof loadInvoice>;            // [id: number]
+export type { Invoice, LoadArgs };
+```
+
+Lợi ích: một nguồn sự thật (kiểu `Invoice` đổi theo thân hàm). Rủi ro: kiểu công khai của API bị trôi theo implementation. Với DTO ranh giới, khai báo `interface` tường minh vẫn tốt hơn.
+
 ## Tricks & tips thực tế
 
 - **Đặt tên cho kiểu callback** (`type Handler = (req: Req) => Promise<void>`) thay vì viết inline lặp lại. Lý do: một chỗ để sửa, và thông báo lỗi hiển thị tên kiểu dễ đọc hơn là cả chữ ký dài.

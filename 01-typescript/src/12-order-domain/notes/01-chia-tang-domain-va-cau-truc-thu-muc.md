@@ -77,6 +77,12 @@ Hàm "tạo" ở ranh giới biến loại thứ nhất thành loại thứ hai 
 - **Giữ file nhỏ và một ý**: một file nên đọc hết trong một màn hình hoặc hai. Khi file ôm cả kiểu, luật, lỗi, repo thì tách ra, nhưng tách theo ý, không theo "mỗi kiểu một file" máy móc.
 - **Với `moduleResolution: NodeNext` và `commonjs`** trong repo hiện tại, import tương đối giữa file `.ts` chạy tốt như các bài trước; việc chuyển ESM (kéo theo đuôi `.js` trong import) thuộc Bài 8, đừng tự đổi khi làm Bài 12 nếu chưa đến lượt.
 
+- **Kiểm tra ranh giới import bằng lệnh, không bằng trí nhớ**: `grep -rnE "from \"(zod|node:|fs|http)" src/12-*/domain` (điều chỉnh theo thư mục của bạn) và đọc từng kết quả. Lý do: lệch ranh giới thường xảy ra từng bước nhỏ ("chỉ import một tiện ích"), một lệnh chạy lại được còn hơn lần xem mắt.
+- **Cẩn thận vòng phụ thuộc giữa các file** (`a.ts` import `b.ts` và `b.ts` import `a.ts`): `tsc` vẫn sạch nhưng lúc chạy có thể lỗi. Thử với `tsx` trong dự án `commonjs`: hai file import vòng và dùng giá trị của nhau ngay lúc nạp module cho `ReferenceError: Cannot access 'makeB' before initialization` (đã chạy; thông điệp và việc có lỗi hay giá trị `undefined` phụ thuộc cách transform và thứ tự import). Lý do cần biết: lỗi chỉ xuất hiện ở một thứ tự import nhất định nên rất khó lần ra. Cách tránh: kiểu dùng chung đặt ở file riêng (`shared/`), tham chiếu giữa aggregate bằng ID thay vì import lẫn nhau.
+- **Tránh `index.ts` "barrel" ở giai đoạn đầu**: file tái xuất mọi thứ làm dễ vô tình import ngược lên và che hướng phụ thuộc. Khi cần, thêm sau cùng. Lý do: mỗi barrel là một chỗ thêm cho vòng phụ thuộc và cho kéo cả module vào khi chỉ cần một hàm.
+- **Phân biệt `domain error` và `application error`**: "hết lượt" là domain; "không tìm thấy bản ghi theo id" thường là application (use case). Đặt sai chỗ làm domain phải biết khái niệm của kho dữ liệu.
+- Xem thêm ghi chú 5 (cạm bẫy mô hình hoá) và 6 (nạp dữ liệu, xung đột đồng thời, xử lý lặp).
+
 ## Liên hệ bài tập
 
 Lab Bài 12: domain layer đầy đủ cho Customer, Product, Order, OrderItem, Payment, kèm test. Gợi ý quy trình, chưa phải đáp án: (1) viết ra ngôn ngữ nghiệp vụ và danh sách luật; (2) xác định cái nào là entity, cái nào là value object, ranh giới aggregate ở đâu và vì sao; (3) chọn cấu trúc thư mục và ghi lý do; (4) dựng lát cắt mỏng rồi mở rộng; (5) tự review theo checklist ở ghi chú 4. Bạn phải giải thích lại được mọi quyết định thiết kế.

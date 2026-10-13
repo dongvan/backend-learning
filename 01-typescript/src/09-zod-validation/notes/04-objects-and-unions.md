@@ -118,6 +118,26 @@ ListQuery.parse({ page: "3", published: "true" }); // { page: 3, perPage: 20, pu
 ListQuery.safeParse({ page: "abc" });              // lỗi: expected number, received NaN
 ```
 
+**Những điều `z.object` thực sự chấp nhận** (đã chạy với Zod 4.6.5):
+
+- Nó từ chối `null` (`expected object, received null`) và mảng (`z.object({}).safeParse([]).success === false`), nhưng **chấp nhận `Date`, `Map` và instance của class** (`z.object({}).safeParse(new Date()).success === true`). Với JSON từ HTTP thì không sao (JSON không có `Date`), nhưng khi nhận object từ code nội bộ/queue deserialize, đừng coi `z.object` là "chỉ object thuần".
+- Khoá `undefined` tường minh *còn nguyên* trong kết quả: `z.object({ a: z.string().optional() }).parse({ a: undefined })` có `Object.keys` là `["a"]`, còn `parse({})` cho `[]`. Khi truyền kết quả vào ORM `update`, khoá có giá trị `undefined` có thể được hiểu là "không đổi" hoặc "đặt NULL" tuỳ thư viện; hãy tự kiểm tra thư viện bạn dùng (cần tự kiểm chứng).
+- Khoá `__proto__` trong JSON không gây prototype pollution qua Zod: với `JSON.parse('{"__proto__":{"admin":true},"a":1}')` (`Object.keys` của nó có `"__proto__"` như khoá thường), cả `z.object` lẫn `z.looseObject` đều trả object chỉ có `a`, và `({}).admin` vẫn `undefined`. Cẩn thận hơn nếu bạn tự `Object.assign`/merge sâu input thô.
+
+**Khoá thừa có kiểu: `catchall`.** Khi muốn nhận khoá động nhưng vẫn kiểm giá trị: `z.object({ a: z.string() }).catchall(z.number())` báo lỗi ở `path: ["b"]` cho `{ a: "x", b: "y" }` (đã chạy). Hợp với "metadata tự do giá trị số/chuỗi", ít dùng hơn `z.record`.
+
+**`z.record` và khoá enum.** `z.record(z.string(), z.number())` cho khoá bất kỳ. Khi khoá là enum, Zod 4 yêu cầu **đủ** mọi khoá: `z.record(z.enum(["a", "b"]), z.number()).safeParse({ a: 1 }).success` là `false`; muốn khoá tuỳ chọn thì dùng `z.partialRecord(...)` (đã chạy, kiểu suy ra `Partial<Record<"a" | "b", number>>`).
+
+**PATCH: dẫn xuất từ schema không có `default`.** Vì `.partial()` vẫn áp `default` (xem file 3), cấu trúc an toàn là:
+
+```ts
+const SettingsFields = z.object({ theme: z.enum(["light", "dark"]), name: z.string().min(1) });
+const CreateSettings = SettingsFields.extend({ theme: SettingsFields.shape.theme.default("light") });
+const PatchSettings = SettingsFields.partial();           // vắng mặt nghĩa là "không đổi"
+```
+
+**Union và độ chính xác của lỗi.** `z.union` thử lần lượt và gom lỗi; `discriminatedUnion` chỉ tra khoá phân biệt rồi validate đúng nhánh. Nếu khoá phân biệt vắng hay sai giá trị, kết quả là một `invalid_union` với `note: "No matching discriminator"`, `discriminator: "type"` và `options` (đã chạy), nên client có thể sửa ngay.
+
 ## Tricks & tips thực tế
 
 - **Luôn dùng `result.data` (đã parse), không dùng input gốc nữa.** Lý do: input gốc còn khoá thừa và giá trị chưa chuẩn hoá; dùng nhầm là mất toàn bộ lợi ích của strip.

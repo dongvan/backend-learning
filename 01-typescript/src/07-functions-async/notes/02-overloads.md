@@ -176,6 +176,39 @@ Với hàm khai báo bằng `const x: Logger = (message, meta?) => ...` thì ph�
 
 **Thông báo lỗi "No overload matches this call".** Compiler liệt kê từng overload thất bại và lý do. Thường lỗi thật nằm ở **overload cuối cùng** được in ra (thông báo hiển thị lý do của overload gần nhất), nhưng đừng tin tuyệt đối: hãy so tay kiểu đối số của bạn với từng chữ ký.
 
+**Các lỗi khai báo overload** (đã thử trên TS 7.0.2):
+
+```text
+TS2394: This overload signature is not compatible with its implementation signature.
+        function h(x: string): number;               // overload trả number
+        function h(x: string | number): string {...} // implementation trả string: không khớp
+TS2391: Function implementation is missing or not immediately following the declaration.
+        có overload nhưng thiếu thân hàm, hoặc có code chen giữa các overload
+TS2389: Function implementation name must be 'k'.
+        thân hàm tên khác (thường do gõ nhầm tên) khiến overload "treo"
+```
+
+Kiểm tra này khá lỏng ở kiểu trả về: implementation trả `number | string` vẫn chấp nhận được overload `(x: string): number` (đã thử), vì kiểu trả về của overload gán được vào kiểu rộng hơn. Nó không kiểm tra thân hàm trả đúng giá trị cho từng overload, nên "lời hứa" ở Ý chính vẫn còn nguyên.
+
+**Overload và các kiểu tiện ích.** `ReturnType`/`Parameters` trên hàm overload chỉ nhìn **overload cuối cùng** (đã thử: `ReturnType<typeof conv>` với `conv(x: string): number; conv(x: number): string` ra `string`). Hệ quả: nếu bạn dựng mock/wrapper bằng `ReturnType`, nó "quên" các overload còn lại. Hãy tự kiểm chứng bằng cách rê chuột nếu bạn truyền một hàm overload làm callback cho hàm generic (chưa thử trong ghi chú này).
+
+**Overload không có dạng arrow.** `const f = (x: string) => ...` không overload được trực tiếp. Muốn overload cho biến, khai báo kiểu là một type có nhiều call signature (như `Logger` ở trên) hoặc dùng `function`. Đây là một lý do phụ khiến overload ít xuất hiện trong code kiểu hàm-mũi-tên.
+
+**Hàm type guard và assertion.** Chúng không phải overload nhưng cũng "đổi kiểu theo hành vi", hay đi cùng nhau:
+
+```ts
+export function assertIsString(x: unknown): asserts x is string {
+  if (typeof x !== "string") throw new TypeError("expected string");
+}
+
+export function demo(input: unknown): number {
+  assertIsString(input);      // sau dòng này input: string
+  return input.length;
+}
+```
+
+Gọi assertion qua biến không có chú thích kiểu tường minh sẽ lỗi `TS2775: Assertions require every name in the call target to be declared with an explicit type annotation` (đã thử với `const as1 = assertIsString; as1(1)` và với `const arrow = (x: unknown): asserts x is string => ...`). Dùng khai báo `function` hoặc gán kiểu tường minh cho biến.
+
 ## Tricks & tips thực tế
 
 - **Thử theo thứ tự: union → tham số optional → generic → overload.** Lý do: mỗi bước nặng hơn bước trước về số chữ ký phải bảo trì và về rủi ro lệch giữa overload và thân hàm (compiler không kiểm tra).

@@ -164,6 +164,65 @@ export { routes };
 
 Cú pháp `<const T>` cần TS 5.0+. Dùng khi bạn viết helper kiểu `defineConfig(...)`.
 
+**Giới hạn của `as const`: chỉ áp lên literal.** `as const` không "đóng băng" kết quả của một biểu thức, nó chỉ áp dụng cho literal viết thẳng tại chỗ:
+
+```text
+TS1355: A 'const' assertion can only be applied to references to enum members, or string,
+        number, boolean, array, or object literals.
+        Math.random() as const        // gọi hàm
+        (cond ? 1 : 2) as const       // biểu thức điều kiện
+```
+
+Trong object literal có giá trị động (`{ id: someVar } as const`) thì chỉ phần literal được khoá, `id` giữ kiểu của `someVar` (kèm `readonly`).
+
+**Duyệt một object `as const`: `Object.keys` trả `string[]`.** Đây là cạm bẫy kinh điển khi dùng config làm bảng tra:
+
+```ts
+const LV = { debug: 10, info: 20 } as const;
+
+// for (const k of Object.keys(LV)) LV[k];
+// TS7053: Element implicitly has an 'any' type because expression of type 'string'
+//         can't be used to index type '{ readonly debug: 10; readonly info: 20; }'.
+
+export const viaEntries = Object.entries(LV).map(([name, value]) => `${name}=${value}`);
+// Object.entries(LV): [string, 10 | 20][]   (khoá bị mất literal, giá trị thì giữ)
+// Object.values(LV):  (10 | 20)[]
+
+export function typedKeys<T extends object>(o: T): (keyof T)[] {
+  return Object.keys(o) as (keyof T)[];     // lời hứa: an toàn khi o không có khoá thừa lúc chạy
+}
+export const viaKeys = typedKeys(LV).map((k) => LV[k]);   // (10 | 20)[]
+```
+
+Vì sao TS không tự suy `keyof T`: ở runtime object có thể mang thêm khoá (subtype, dữ liệu ngoài), nên `Object.keys` cố tình trả `string[]`. `as (keyof T)[]` là một cast, nên chỉ dùng cho object bạn tự kiểm soát (như config `as const`).
+
+**`satisfies Record<Union, X>` ép đủ khoá.** Khi tập khoá là một union, `satisfies` cho bạn kiểm tra tính đầy đủ:
+
+```ts
+type Role = "admin" | "user" | "guest";
+
+export const perms = {
+  admin: ["*"],
+  user: ["read"],
+  guest: [],
+} satisfies Record<Role, string[]>;
+// Bỏ dòng guest: TS2741: Property 'guest' is missing in type '{ admin: string[]; user: string[]; }'
+//                         but required in type 'Record<Role, string[]>'.
+```
+
+Thêm một `Role` mới sẽ làm bảng này lỗi tại chỗ cần bổ sung (đã thử), tương tự `match` đầy đủ trong PHP 8 nhưng bắt ở compile time.
+
+**Contextual typing vẫn hoạt động trong `satisfies`.** Hàm viết bên trong object nhận kiểu tham số từ kiểu đích:
+
+```ts
+export const handlers = {
+  onUpload: (name) => name.length,        // name: string, suy ra từ Record<string, (s: string) => number>
+} satisfies Record<string, (s: string) => number>;
+// handlers.onUpload: (name: string) => number   (đã thử)
+```
+
+**`<const T>` với ràng buộc mutable** (TS 5.0+, đã thử trên TS 7.0.2): `function d<const T extends string[]>(x: T): T` gọi với `["a", "b"]` cho ra `["a", "b"]` (tuple **không** readonly), còn ràng buộc `readonly string[]` cho `readonly ["a", "b"]`. Một số bài viết cũ nói "ràng buộc mutable làm `const` mất tác dụng" (chưa kiểm chứng trên bản TS cũ); hãy rê chuột kiểm tra trên phiên bản bạn dùng thay vì tin vào bài viết. Quy ước an toàn: khai báo ràng buộc là `readonly ...[]` nếu hàm không sửa đầu vào.
+
 ## Tricks & tips thực tế
 
 - **Dùng `satisfies` cho object config thay vì chú thích `: Type`.** Lý do: giữ được kiểu hẹp (literal, tuple, khoá cụ thể) để suy ra kiểu khác từ nó, mà vẫn bị compiler kiểm tra.

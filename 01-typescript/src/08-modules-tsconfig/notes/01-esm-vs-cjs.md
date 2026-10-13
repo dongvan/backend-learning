@@ -84,6 +84,40 @@ ReferenceError: __dirname is not defined in ES module scope
 
 **So sánh với PHP/Laravel.** Composer autoload PSR-4 ánh xạ *namespace* → *thư mục*, và PHP tự `require` file khi class được dùng lần đầu. Trong Node không có autoload: mỗi file phải `import` tường minh thứ nó cần, và đường dẫn là đường dẫn file thật (kể cả đuôi trong ESM). Không có khái niệm "namespace" toàn cục, mỗi file là một module có phạm vi riêng, thứ nó `export` mới thấy được từ ngoài. Hàm `require` của PHP tương tự `require` của CJS (đồng bộ, theo điều kiện), còn `use Namespace\Class` chỉ là bí danh tên, không nạp file, khác với `import` của ESM vốn là thứ nạp file.
 
+**Import vòng tròn (circular) khác hẳn giữa hai hệ** (đã chạy trên Node 24.21). Hai file `a` và `b` import lẫn nhau:
+
+```text
+CJS  a.cjs: exports.a1="a1"; const b=require("./b.cjs"); exports.a2="a2"; log(b)
+     b.cjs: const a=require("./a.cjs"); log(JSON.stringify(a)); exports.b="b"
+-> b sees a: {"a1":"a1"}     (a mới chạy dở: chỉ có phần đã gán trước dòng require)
+   Warning: Accessing non-existent property 'toJSON' of module exports inside circular dependency
+
+ESM  a.js: import { b } from "./b.js"; export const a="a"; log("a sees", b)
+     b.js: import { a } from "./a.js"; export const b="b"; log("b sees", a)
+-> ReferenceError: Cannot access 'a' before initialization   (chạy a.js: b chạy trước và đọc a ở TDZ)
+```
+
+CJS cho bạn **bản dở dang** của `module.exports` (lỗi thường lặng lẽ: giá trị `undefined`), ESM ném `ReferenceError` rõ ràng nếu bạn đọc binding trước khi nó được khởi tạo. Cách sửa chung: bỏ vòng (tách phần dùng chung ra file thứ ba), hoặc chỉ đọc giá trị bên trong hàm (chạy sau khi cả hai module đã nạp xong), không đọc ở mức top-level của module.
+
+**ESM import tên (named) từ CJS không phải lúc nào cũng được.** Node phân tích tĩnh file CJS để đoán các tên export. Đã thử với `import { foo } from "./x.cjs"`:
+
+```text
+exports.foo = 1;                                  -> chạy được
+const foo = 1; module.exports = { foo };           -> chạy được (shorthand)
+module.exports = { foo: 1 };                       -> SyntaxError: Named export 'foo' not found.
+module.exports = (function () { return { foo: 1 }; })();   -> cùng lỗi
+```
+
+Thông báo lỗi của Node tự gợi ý cách chữa: `import pkg from "./x.cjs"; const { foo } = pkg;`. Đây là lý do một thư viện CJS "chạy được ở `tsx`/bundler" nhưng sập ở Node thật. Kiểm tra bằng `node` thuần, và nhớ `default` luôn là cả `module.exports`.
+
+**`.mts` trong package CJS, và `import()` động.** Dùng được trong cùng một project (đã thử với `"type": "commonjs"`, `module: NodeNext`):
+
+- `src/lib.mts` biên dịch ra `dist/lib.mjs` (ESM), và file khác import nó bằng đuôi **`.mjs`** (`import { esm } from "./lib.mjs"`).
+- Trong file CJS, `await import("./lib.mjs")` được giữ nguyên là `import()` trong đầu ra (không bị đổi thành `require`), nên nạp được module ESM có top-level `await` (đã thử, chạy ra kết quả).
+- Ngược lại, một `import` tĩnh từ CJS tới module ESM có top-level `await` làm `node dist/static.js` sập với `ERR_REQUIRE_ASYNC_MODULE` (`require()` cannot be used on an ESM graph with top-level await. Use import() instead).
+
+Bài học: nếu một thư viện chỉ có ESM mà app của bạn là CJS, dùng `import()` động, hoặc chuyển cả app sang ESM.
+
 ## Tricks & tips thực tế
 
 - **Mặc định cho dự án mới: ESM (`"type": "module"`).** Lý do: đó là chuẩn của JS, top-level `await` tiện cho script/khởi tạo, và ngày càng nhiều thư viện chỉ phát hành ESM. Ngoại lệ: một số framework (ví dụ NestJS ở thời điểm tài liệu này) quen với CJS; kiểm tra tài liệu framework trước khi chuyển.

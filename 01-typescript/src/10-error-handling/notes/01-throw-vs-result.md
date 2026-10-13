@@ -73,6 +73,54 @@ function andThen<T, U, E, F>(r: Result<T, E>, f: (v: T) => Result<U, F>): Result
 
 `andThen` hợp nhiều bước, mỗi bước có thể lỗi với kiểu khác nhau; kiểu lỗi tổng là hợp (`E | F`). Đã biên dịch và chạy. Chú ý `return r` ở nhánh lỗi hợp lệ về kiểu vì `Err<E>` thu hẹp được thành `Result<U, E>`.
 
+**Các thông báo lỗi bạn sẽ gặp khi dùng `Result`** (đã chạy với `tsc` 7.0.2 và `tsconfig.json` của repo; `CartError` là union lỗi bất kỳ của bạn):
+
+```ts
+declare function checkout(): Result<number, CartError>;
+declare function checkoutAsync(): Promise<Result<number, CartError>>;
+
+const r = checkout();
+r.value;
+// error TS2339: Property 'value' does not exist on type 'Result<number, CartError>'.
+//   -> chưa thu hẹp bằng `if (r.ok)`
+
+async function g() {
+  const p = checkoutAsync();          // quên await
+  if (p.ok) return p.value;
+  // error TS2339: Property 'ok' does not exist on type 'Promise<Result<number, CartError>>'.
+  return 0;
+}
+
+function save(): Result<void, CartError> { return ok(); }
+// error TS2554: Expected 1 arguments, but got 0.   -> phải viết ok(undefined)
+
+const bad: Result<number, CartError> = err({ kind: "nope" });
+// error TS2322: Type 'Err<{ kind: "nope"; }>' is not assignable to type 'Result<number, CartError>'.
+```
+
+Lỗi cuối đọc khó: đầy đủ nó gồm bốn dòng và dòng cuối là `Property 'sku' is missing in type '{ kind: "nope"; }' but required in type '{ kind: "item_unavailable"; sku: string; }'`. Compiler thử khớp với nhánh `item_unavailable` của union và báo thiếu `sku`, trong khi lỗi thật là `"nope"` không phải một `kind` hợp lệ. Khi gặp lỗi dài kiểu này với union, hãy nhìn **giá trị tag** bạn viết trước, đừng chữa theo dòng cuối.
+
+Ngữ cảnh kiểu quan trọng khi tạo lỗi. `const e1: Result<number, CartError> = err({ kind: "empty" })` biên dịch được vì kiểu đích giữ literal `"empty"`. Nhưng tách ra biến trung gian không có kiểu: `const w = err({ kind: "empty" }); const e2: Result<number, CartError> = w;` báo `TS2322` vì `w` có kiểu `Err<{ kind: string }>` (tag bị mở rộng thành `string`, xem Bài 2). Sửa: gán kiểu cho `w`, viết `err<CartError>(...)`, hoặc để `err(...)` nằm thẳng ở vị trí `return`.
+
+**Narrowing bằng destructuring.** `const { ok: isOk } = res; if (isOk) return res.value;` hợp lệ từ TS 4.6 (kiểu thu hẹp được qua biến discriminant `const` được destructure; đã kiểm). Nhưng `const { ok, value, error } = res` *lấy* `value`/`error` thì báo `TS2339` vì chưa thu hẹp lúc destructure (đã kiểm). Cách viết gọn an toàn nhất vẫn là `if (r.ok) { r.value } else { r.error }`.
+
+**`noImplicitReturns` và `switch`.** Hàm nhận `CartError` rồi `switch` thiếu một nhánh, không có `default`, báo `TS2366: Function lacks ending return statement and return type does not include 'undefined'` (đã kiểm). Đó là cách compiler nhắc "lỗi mới chưa được xử lý" mà không cần `assertNever`. Với `if (...) return;` (không giá trị) lẫn `return value;` trong hàm có thể trả `undefined`, `noImplicitReturns` báo `TS7030: Not all code paths return a value`.
+
+**Hai chiều của `async`: `Promise` reject và `Result` khác kênh, và `return` không `await` thoát khỏi `try`.**
+
+```ts
+async function noAwait(): Promise<string> {
+  try { return fails(); } catch { return "caught"; }   // lỗi của fails() KHÔNG bị bắt ở đây
+}
+async function withAwait(): Promise<string> {
+  try { return await fails(); } catch { return "caught"; }  // bị bắt
+}
+```
+
+Đã chạy: `noAwait()` làm lời hứa reject (thoát khỏi `catch`), `withAwait()` trả `"caught"`. Lý do: `return promise` trả lời hứa đi, `try` đã kết thúc trước khi nó reject. Trong `try/catch`, hãy `return await`.
+
+**`finally` có thể nuốt lỗi.** Một `return` trong `finally` ghi đè cả `throw` đang bay: `function f() { try { throw new Error("x"); } finally { return "swallowed"; } }` trả `"swallowed"` mà không ném gì (đã chạy). Chỉ dọn dẹp trong `finally`, đừng `return`/`throw` ở đó.
+
 **Bọc API ném lỗi thành `Result`.** `JSON.parse` ném `SyntaxError`:
 
 ```ts
@@ -110,6 +158,10 @@ function tryParseJson(text: string): Result<unknown, { kind: "bad_json"; cause: 
 - **Debug "lỗi lọt đi mà không ai xử lý"**: tìm các `catch (e) { /* trống */ }` và `.catch(() => {})`. Lý do: nuốt lỗi khiến hệ thống tiếp tục chạy với trạng thái sai.
 - **Thử kiểm tra tay**: thêm một biến thể vào union lỗi, chạy `npm run type-check` và xem các `switch` báo lỗi ở đâu (giống Bài 2). Nếu không chỗ nào báo thì chỗ nào đó đang dùng `default` che lỗi.
 - **Đừng vội thêm thư viện Result** (`neverthrow`, `ts-results`, `effect`). Lý do: dự án học này không thêm dependency ngoài nhu cầu; hai type và vài hàm nhỏ đủ để hiểu cơ chế, sau đó mới đánh giá thư viện.
+
+- **Trong `try/catch` của hàm async luôn `return await`.** Lý do: `return promise` không `await` làm lỗi thoát khỏi `try`, `catch` không bao giờ chạy (đã chạy, xem trên). Quy tắc lint `@typescript-eslint/return-await` kiểm việc này (repo không có lint; đây là gợi ý).
+- **Một lời hứa reject không ai xử lý làm sập tiến trình Node 24.** Đã chạy: `Promise.reject(new Error("boom"))` không có `catch` làm tiến trình thoát mã `1` và in stack; `Promise.reject("oops")` (không phải `Error`) sinh `UnhandledPromiseRejection` với `code: 'ERR_UNHANDLED_REJECTION'`. Lý do cần `Result` hoặc `try/catch` ở ranh giới: lỗi async quên xử lý là lỗi sập dịch vụ, không phải lỗi "một request".
+- **Kiểu của `ok`/`err` dùng hàm tạo thay vì literal rải rác.** Lý do: một chỗ viết `{ ok: true, value }`, ít cơ hội gõ nhầm `okay: true`; compiler bắt nhầm tag ngay.
 
 ## Liên hệ bài tập
 

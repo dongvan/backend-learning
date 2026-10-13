@@ -87,6 +87,12 @@ Lý do tách: lỗi nghiệp vụ **dự kiến được** và nên có kiểu �
 - **Tiền: kiểm tra `Number.isSafeInteger` sau mỗi phép nhân** nếu giá trị có thể lớn; vượt `2^53` là mất chính xác mà không báo lỗi. Lý do: JavaScript không tràn số nguyên theo kiểu ném lỗi, nó âm thầm làm tròn.
 - **Debug kiểu khi `Result` không narrow**: nếu `r.value` báo lỗi, kiểm `ok` trước (`if (!r.ok) return ...`); nếu vẫn lỗi, kiểm tra `ok` có phải kiểu literal `true`/`false` (đừng để suy luận mở rộng thành `boolean`: khai báo kiểu trả về tường minh `Result<...>` hoặc dùng `as const`).
 
+- **Hàm tạo Result phải có kiểu trả về tường minh**: `const ok = <T>(value: T) => ({ ok: true, value })` cho `ok: boolean`, và chỗ gọi báo `TS2339: Property 'value' does not exist on type '{ ok: boolean; ... } | ...'` (đã chạy; ghi chú 5, mục 1). Lý do: lỗi hiện ra ở chỗ dùng, cách xa chỗ gây ra.
+- **Chia tiền theo trọng số phải phân phát phần dư** (ví dụ ở ghi chú 5, mục 8) và quyết định ai nhận phần dư là quy tắc nghiệp vụ. Số âm (hoàn tiền) làm tròn khác số dương với `Math.round` (`-2.5` thành `-2`, `2.5` thành `3`; đã chạy).
+- **Nên lưu cả "số lượng" lẫn "đơn giá tại thời điểm" thay vì tham chiếu giá hiện tại của sản phẩm**: giá sản phẩm đổi sau này không được làm đổi tổng của một giao dịch đã chốt. Đây là kiểu bug chỉ lộ khi có dữ liệu cũ, và test nên có ca "giá sản phẩm đổi sau khi đã đặt".
+- **Dùng bảng chuyển trạng thái (`as const satisfies Record<Status, readonly Status[]>`, TS 4.9+) cho phần "đồ thị trạng thái"** và hàm cho điều kiện phụ thuộc dữ liệu; chi tiết ở ghi chú 5, mục 5. Lý do: luật nằm ở một chỗ đọc như đặc tả và `tsc` báo thiếu khi thêm trạng thái.
+- **Phân biệt "không thể xảy ra" và "chưa nghĩ tới"** trong nhánh `default`/`assertNever`: nếu dữ liệu từ DB có thể mang giá trị lạ (dữ liệu cũ), nhánh đó không phải "không thể", cần xử lý rõ (xem ghi chú 6, mục hydration).
+
 ## Liên hệ bài tập
 
 Lab Bài 12: lập danh sách invariant cho Order và Payment (ví dụ về trạng thái hợp lệ, số lượng, tổng tiền, thanh toán khớp đơn), quyết định tầng bảo vệ cho từng cái. Mô hình tiền theo một trong hai hướng (số nguyên minor units hoặc thư viện) và giải thích lựa chọn. Dùng discriminated union cho trạng thái Order và Payment (đã làm ở Bài 2) và Result cho lỗi nghiệp vụ (Bài 10). Mỗi invariant cần ít nhất một test từ chối và một test ở biên.

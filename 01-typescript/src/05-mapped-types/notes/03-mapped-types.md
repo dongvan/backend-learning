@@ -95,6 +95,20 @@ Mẫu này tạo bảng handler cho webhook/event: thêm một thành viên vào
 
 **So sánh với PHP/Laravel.** Không có tương đương ngôn ngữ. Gần nhất về ý tưởng: `$fillable`/`$casts` của Eloquent ánh xạ cột sang kiểu, hoặc `array_map` + `array_filter` trên `$model->getAttributes()`. Khác biệt cốt lõi: PHP làm ở runtime trên dữ liệu; mapped type làm ở compile time trên **kiểu** và biến mất khi chạy.
 
+**Homomorphic trên kiểu nguyên thuỷ trả lại chính nó.** Mapped type homomorphic áp lên primitive không biến nó thành object:
+
+```ts
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+// Nullable<string> là string               (không phải { toUpperCase: ... | null, ... })
+// Nullable<number | undefined> là number | undefined
+```
+
+Lý do: compiler coi phép `keyof T` trên tham số kiểu là "ánh xạ các thuộc tính của T"; với nguyên thuỷ thì trả về nguyên kiểu. Hệ quả: `Partial<string>` là `string`, không phải object toàn optional. Điều này giải thích vì sao `DeepPartial` không cần nhánh riêng cho `string`/`number`.
+
+**Khoá `string` ở vế phải `in` sinh index signature:** `{ [K in string]: number }` giống hệt `Record<string, number>`. Còn `Record<Union, V>` (file 05, mục 3) sinh các khoá cụ thể và bắt buộc đủ.
+
+**Quy tắc cú pháp: mapped type chỉ nằm trong `type`.** Trong `interface` nó báo TS1169 (chi tiết ở file 05, mục 7). Muốn "interface kế thừa từ mapped type" hãy viết `interface X extends Mapped<Y> {}`: được phép khi mapped type cho ra object có khoá xác định.
+
 ## Tricks & tips thực tế
 
 - **Bắt đầu từ `{ [K in keyof T]: T[K] }` rồi sửa từng bước.** Đây là "identity" an toàn; thay từng phần nhỏ và hover để thấy kiểu. Lý do: viết một lần cả cấu trúc phức tạp thì không biết lỗi ở đâu.

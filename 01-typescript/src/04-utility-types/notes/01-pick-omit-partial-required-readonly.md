@@ -110,6 +110,8 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 
 **Index signature.** `Omit` trên kiểu có index signature (`{ [k: string]: unknown; id: number }`) làm mất khoá cụ thể, chỉ còn index signature, vì `keyof` trả về `string | number`.
 
+**Trên mảng và tuple** (đã kiểm chứng): `Readonly<string[]>` là `readonly string[]` (mất `push`), `Partial<string[]>` cho phần tử `string | undefined`, `Partial<[number, string]>` cho tuple có phần tử tuỳ chọn. Trong hàm generic, `{}` gán được cho `Partial<T>` nhưng không gán được cho `Readonly<T>`. Các tình huống khác ở file 5.
+
 ## Tricks & tips thực tế
 
 - **Với DTO, ưu tiên `Pick` (whitelist) hơn `Omit` (blacklist).** Lý do: thêm cột nhạy cảm vào entity (ví dụ `passwordHash`) thì `Omit<User, "x">` tự động đưa nó ra response, còn `Pick` thì phải chủ động thêm. An toàn mặc định quan trọng hơn gõ ngắn.

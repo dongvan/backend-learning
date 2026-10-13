@@ -110,6 +110,12 @@ Một sai lầm hay gặp là nhồi mọi thứ vào một aggregate to (Custom
 - **Kiểm tra bằng thí nghiệm**: thử `new Money(...)`, thử gán `readonly`, thử truyền `BookId` vào chỗ `MemberId` và xác nhận compiler từ chối; ghi lại thành test dùng `@ts-expect-error` (Bài 11).
 - **Đừng lạm dụng brand**: ID thường nên brand; còn mỗi chuỗi đều brand thì code đầy `as` và khó đọc. Brand khi nhầm lẫn có hậu quả thật.
 
+- **Class với thành viên `private` gần như nominal**: object literal cùng hình dạng công khai không gán được (`TS2741: Property 'cents' is missing ...`), còn `new` bị chặn bởi `TS2673: Constructor of class '...' is private ...` (cả hai đã chạy; chi tiết ở ghi chú 5). Lý do hữu ích: bạn có hai cách chặn giá trị giả mạo ở compile-time (brand cho kiểu dữ liệu thuần, class private cho value object) và nên biết khác biệt: brand không tồn tại lúc chạy, `#private` thì có.
+- **Brand rơi mất qua phương thức chuỗi và qua JSON**: `id.toUpperCase()` trả `string` thường; `JSON.parse(...) as { id: Id }` chỉ là lời hứa. Lý do: khi đó lỗi nhầm ID quay lại mà compiler không cảnh báo; luôn dựng lại ID qua hàm tạo ở ranh giới (ghi chú 5, mục 3).
+- **Entity và value object trong `Map`/`Set`**: khoá là `id` (nguyên thuỷ) cho entity thì ổn; `Set<Money>` hay `Map<Money, ...>` so theo tham chiếu nên không loại trùng, không tra cứu được (ghi chú 5, mục 4).
+- **Câu hỏi quyết định "entity hay value object?"**: hai bản ghi giống hệt nhau về nội dung nhưng khác `id` có phải cùng một thứ không? Nếu hai dòng đặt hàng cùng sản phẩm, cùng số lượng là "như nhau" về nghiệp vụ thì nghiêng về value object; nếu cần theo dõi riêng từng dòng (đổi giá, huỷ riêng) thì có danh tính. Đây là câu hỏi nghiệp vụ, không phải kỹ thuật.
+- **Lưu ý `structuredClone` với value object dạng class**: nó giữ `Date` nhưng làm mất prototype (instance class thành object trần; đã chạy), nên sao chép class bằng hàm của chính nó (`Money.of(m.minor, m.currency)`) hoặc lưu dạng dữ liệu thuần rồi dựng lại.
+
 ## Liên hệ bài tập
 
 Trong lab, tự phân loại Customer, Product, Order, OrderItem, Payment: cái nào là entity (có id), cái nào là value object (ví dụ tiền, địa chỉ nếu có), cái nào là root của aggregate và con nằm trong đó. Với mỗi lựa chọn viết một câu lý do dựa trên "luật nào phải nhất quán cùng lúc". Chú ý quan hệ Order - OrderItem và Order - Payment: tham chiếu bằng ID hay chứa trực tiếp? Cả hai có thể đúng; bạn cần chọn và bảo vệ được.

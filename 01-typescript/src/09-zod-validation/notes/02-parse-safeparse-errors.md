@@ -44,6 +44,33 @@ try {
 
 `catch (e)` cho `e` kiểu `unknown` (bật bởi `strict`), nên `instanceof z.ZodError` vừa là kiểm tra runtime vừa là thu hẹp kiểu.
 
+**Quên thu hẹp `success` không phải lỗi biên dịch, mà là `T | undefined`.** Ở Zod 4.6.5, kết quả `safeParse` khai báo `data` và `error` ở cả hai nhánh (nhánh sai có `data?: never`), nên:
+
+```ts
+const Query = z.object({ page: z.number() });
+const r = Query.safeParse({});
+const n: number = r.data;
+// error TS2322: Type '{ page: number; } | undefined' is not assignable to type 'number'.
+```
+
+Nghĩa là truy cập `r.data` *được phép*, nhưng kiểu là `{ page: number } | undefined` (đã kiểm bằng `tsc`). Compiler vẫn buộc bạn xử lý `undefined` trước khi dùng như giá trị thật; nếu bạn "chữa" bằng `r.data!` hay `as`, bạn đã tắt đúng lớp bảo vệ. Chữa đúng là `if (!r.success) { ... return }` rồi dùng `r.data`. (Câu "`r.data` không tồn tại" ở ví dụ đầu file nên hiểu là "không có giá trị ở nhánh lỗi".)
+
+**`parse` trả về object mới, không sửa input.** Đã chạy: kết quả khác tham chiếu với input, kể cả object lồng nhau (`out.o !== input.o`), và input gốc nguyên vẹn (khoá thừa vẫn còn trong input). Hệ quả: so sánh `result === input` luôn sai, và sau khi parse bạn phải dùng `result` chứ không dùng input (xem file 4).
+
+**Phân biệt `ZodError` của input với bug ném từ callback.** Nếu `refine`/`transform` tự ném lỗi (ví dụ `TypeError`), lỗi đó *không* bị gói thành `ZodError` mà thoát nguyên vẹn (đã chạy). Vì vậy `catch (e) { if (e instanceof z.ZodError) ... else throw e }` đúng nghĩa: nhánh `else` là bug thật.
+
+**Các thông báo mặc định hay gặp** (đã chạy, tiếng Anh; dùng để nhận diện, đừng dựa vào chuỗi):
+
+| Input sai | `code` | `message` |
+|---|---|---|
+| thiếu trường (`undefined`) với `z.string()` | `invalid_type` | `Invalid input: expected string, received undefined` |
+| `null` với `z.string()` | `invalid_type` | `Invalid input: expected string, received null` |
+| `[]` với `z.array(...).min(1)` | `too_small` | `Too small: expected array to have >=1 items` |
+| giá trị ngoài `z.enum` | `invalid_value` | `Invalid option: expected one of "admin"\|"member"` |
+| `z.union` không nhánh nào khớp | `invalid_union` | `Invalid input` (kèm `errors`: mảng lỗi của từng nhánh) |
+
+Chú ý `invalid_union` của `z.union`: message chung chung, lỗi chi tiết nằm trong `issue.errors` (mảng các mảng issue). Ví dụ `z.union([z.string(), z.number()]).safeParse(true)` cho một issue duy nhất có `errors` gồm hai mảng. Đây là lý do `z.discriminatedUnion` cho lỗi dễ đọc hơn (file 4).
+
 **Chọn cái nào?**
 
 | Tình huống | Chọn |

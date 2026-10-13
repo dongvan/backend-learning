@@ -104,6 +104,12 @@ type Trim<S extends string> = S extends ` ${infer R}` | `${infer R} ` ? Trim<R> 
 
 **So sánh với PHP/Laravel.** Route trong Laravel là chuỗi `"/users/{user}/posts/{post}"`, tham số route kiểm tra ở runtime (`$request->route('user')`), IDE không biết tên tham số. Ở TS, kiểu hoá chuỗi route cho phép compiler bắt thiếu/sai tham số lúc biên dịch.
 
+**`${number}` rộng hơn "chuỗi số nguyên".** Với tsc 7.0.2: `"1e3"`, `" 1"`, `"0x10"`, `"-1.5"` được chấp nhận; `""`, `"1_000"`, `"Infinity"`, `"NaN"` bị từ chối. Đừng xem nó là kiểm tra id.
+
+**Giới hạn kích thước.** Union tích Descartes 10.000 literal (`${D}${D}${D}${D}` với `D` là chữ số) chạy được; 100.000 literal báo **TS2590: Expression produces a union type that is too complex to represent.**
+
+**Quy tắc `infer` trên chuỗi.** Hai `infer` liền nhau không có dấu phân cách: cái đầu ăn **một ký tự**. `SnakeToCamel<"a__b">` ra `"aB"` và `SnakeToCamel<"_a">` ra `"A"` (dấu gạch dưới liền nhau hoặc đứng đầu bị nuốt). `Uppercase<string>` là kiểu mẫu: gán `"abc"` lỗi, `"ABC"` hợp lệ. Danh sách đầy đủ kèm cách nghĩ ở file 05, mục 11 đến 13.
+
 ## Tricks & tips thực tế
 
 - **Dùng cho tập chuỗi nhỏ, có cấu trúc rõ** (tên event `entity.action`, HTTP route, tên header, key cấu hình). Lý do: nhận lại gợi ý tự hoàn thành (autocomplete) và bắt lỗi chính tả.

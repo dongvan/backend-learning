@@ -113,6 +113,11 @@ Dạng object-array rõ nghĩa hơn khi có từ 3 cột trở lên vì có tên
 - **Một lỗi thường gặp với `noUncheckedIndexedAccess`**: `list[0]` có kiểu `T | undefined`, nên trong test phải `expect(list[0]).toEqual(...)` hoặc dùng `list.at(0)`; tránh `list[0]!.x` che mất trường hợp mảng rỗng. Khi cần narrowing một `Result`, viết `expect(r.ok).toBe(true); if (!r.ok) return;`: `expect` cho thông báo lỗi rõ, còn `if` giúp compiler thu hẹp kiểu.
 - **Test sinh ngẫu nhiên** (property-based, thư viện fast-check) mạnh cho tính chất như "tổng các phần = tổng gốc", nhưng là phụ thuộc thêm; chưa cần ở Phase 01.
 
+- **`Math.round` làm tròn nửa về phía dương** (đã chạy): `Math.round(2.5)` là `3`, `Math.round(-2.5)` là `-2`, `Math.round(0.5)` là `1`. Nếu nghiệp vụ là "làm tròn nửa ra xa số 0" hay "làm tròn chẵn (banker's rounding)" thì kết quả với số âm (hoàn tiền, điều chỉnh giảm) sẽ lệch 1 đơn vị. Lý do phải có test số âm: phần lớn người viết chỉ thử số dương. Và `Math.round(19.99 * 100)` ra `1999` nhưng `19.99 * 100` thật ra là `1998.9999999999998` (đã chạy): người ta "may mắn" đúng nhờ `round`, nên đây là chỗ test ở biên mới lộ.
+- **Vượt ngưỡng an toàn của số nguyên** (đã chạy): `Number.MAX_SAFE_INTEGER * 2` vẫn là một `number` nhưng `Number.isSafeInteger` trả `false`, và `MAX_SAFE_INTEGER + 1 === MAX_SAFE_INTEGER + 2` là `true`. Test tiền nên có một ca rất lớn nhằm khẳng định domain từ chối (hoặc xử lý) thay vì âm thầm sai.
+- **Ngày không hợp lệ**: `new Date("x")` cho `Invalid Date`, và mọi phép so sánh với nó đều `false` (đã chạy: `new Date("x") >= new Date()` là `false`). Nghĩa là `if (start >= end) return lỗi` **không** bắt được ngày hỏng; phải kiểm `Number.isNaN(d.getTime())` tường minh, và test ca đó riêng.
+- **Bảng `it.each` có cột "mô tả ca"** nên mô tả *quy tắc* ("giữ nguyên khi đúng ngưỡng") chứ không mô tả *dữ liệu* ("100, 200"). Lý do: khi một dòng đỏ, người đọc cần biết quy tắc nào bị vi phạm.
+
 ## Liên hệ bài tập
 
 Với mỗi bài 1-10, lập bảng edge case theo các nhóm ở trên rồi chọn những nhóm thực sự áp dụng. Hãy dành riêng một test cho: rỗng, đúng ngưỡng, giá trị bị cấm, và (nếu bài có tiền) tính chính xác của số học. Bài 1 (`calculateOrderTotal`) và Bài 10 (lỗi có kiểu) là hai bài có nhiều ca biên nhất. Tự quyết định ca nào có giá trị; đừng viết cho đủ số lượng.

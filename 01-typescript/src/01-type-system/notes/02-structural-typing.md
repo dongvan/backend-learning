@@ -41,6 +41,26 @@ type Opts = { retry?: number };
 const o: Opts = { timeout: 1 };   // Lỗi, dù không có thuộc tính nào bắt buộc
 ```
 
+**Excess property check: khi nào báo, khi nào không** (đã kiểm chứng; `Point = { x: number; y: number }`):
+
+| Cách viết | Báo lỗi thuộc tính thừa? | Lý do |
+|---|---|---|
+| `const p: Point = { x: 1, y: 2, z: 3 }` | Có | Object literal "tươi" gán trực tiếp |
+| `f({ x: 1, y: 2, z: 3 })` (truyền vào tham số) | Có | Như trên |
+| `return { x: 1, y: 2, z: 3 }` trong hàm trả `Point` | Có | Như trên |
+| `{ p: { x: 1, y: 2, z: 3 } }` gán cho `{ p: Point }` | Có | Kiểm tra áp dụng cả literal lồng nhau |
+| `[{ x: 1, y: 2, z: 3 }]` gán cho `Point[]` | Có | Literal trong mảng cũng "tươi" |
+| `const tmp = { x: 1, y: 2, z: 3 }; f(tmp)` | **Không** | Biến trung gian không còn "tươi" |
+| `{ ...{ x: 1, y: 2, z: 3 } }` gán cho `Point` | **Không** | Spread không bị kiểm tra thuộc tính thừa |
+| `{ x: 1, y: 2, z: 3 } as Point` | **Không** | Type assertion bỏ qua kiểm tra (chỉ cần đủ giao nhau) |
+| `{ x: 1, y: 2, z: 3 } satisfies Point` (TS 4.9+) | Có | `satisfies` vẫn kiểm tra literal |
+
+Quy tắc nhớ: chỉ object literal vừa được viết ra **ngay tại vị trí có kiểu đích** mới bị kiểm tra. Mọi con đường làm mất "tính tươi" (biến, spread, `as`) đều qua mặt được.
+
+**Khai báo kiểu cho tham số hay cho biến, cái nào bảo vệ tốt hơn?** Hàm nhận `Point` không bảo vệ hàm khỏi thuộc tính thừa lúc chạy. Nếu hàm làm `Object.keys(p)` hoặc `{ ...p }` để lưu DB, dữ liệu thừa lọt vào. Chỉ lấy đúng trường cần (`{ x: p.x, y: p.y }`).
+
+**Dữ liệu thừa khi chạy là có thật**: kiểu không tồn tại ở runtime. Request body có thể chứa `isAdmin: true` mặc dù kiểu `CreateUserInput` không có trường này; việc có lỗi hay không tuỳ code của bạn có tin vào kiểu hay validate (Zod `strict()`/`strip()`).
+
 ## Tricks & tips thực tế
 
 - **Cạm bẫy "thừa thuộc tính lọt qua"**: truyền object qua biến trung gian thì không báo lỗi, nên dữ liệu thừa (ví dụ `password`) có thể bị trả ra response hay lưu vào DB. Với dữ liệu từ ngoài, dùng Zod `.strict()`/`.strip()` hoặc map tay sang DTO, đừng tin vào compiler.

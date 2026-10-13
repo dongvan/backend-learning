@@ -108,6 +108,32 @@ So với Laravel: test với `RefreshDatabase` cho độ tin cậy về truy v�
 - **Đừng đuổi theo con số coverage**: nếu đặt ngưỡng cứng, người ta thêm test vô nghĩa để đạt ngưỡng. Hãy đọc báo cáo để thấy nhánh lỗi nào chưa được phủ.
 - **Đặt test cạnh code** (`fine.ts` và `fine.test.ts` cùng thư mục) như repo đang làm: dễ tìm, và `rootDir: src` buộc cả hai dưới `src/`.
 
+- **`toEqualTypeOf` rất chặt**: `{ a: 1 } & { b: 2 }` không "giống hệt" `{ a: 1; b: 2 }` dù hai chiều `toExtend` đều đúng; `readonly` cũng làm hai kiểu khác nhau (đã chạy, ghi chú 5 mục 10). Lý do dễ vấp: type test viết cho kiểu dẫn xuất từ `Omit`/intersection thường đỏ dù "trông giống hệt" khi hover. Cách xử lý: so sánh cấu trúc bằng `toExtend` hai chiều, hoặc làm phẳng kiểu bằng mapped type trước.
+- **Bắt đầu type test từ ca "phải bị cấm"**: viết `// @ts-expect-error` cho phép gán sai trước, rồi mới viết `expectTypeOf` cho ca đúng. Lý do: ca bị cấm là ca duy nhất chứng minh kiểu đang *bảo vệ*; ca đúng chỉ chứng minh kiểu đang *dùng được*.
+- **Test double của repository nên có test hợp đồng chung**: cùng một bộ `describe.each` chạy trên mọi cài đặt (đã chạy thật với một cài đặt, thêm cài đặt chỉ là thêm một dòng vào mảng):
+
+```ts
+import { describe, it, expect, beforeEach } from "vitest";
+
+interface NoteRepo {
+  save(n: { id: string; text: string }): Promise<void>;
+  find(id: string): Promise<{ id: string; text: string } | undefined>;
+}
+const impls: ReadonlyArray<readonly [string, () => NoteRepo]> = [["in-memory", () => new InMemoryNoteRepo()]];
+
+describe.each(impls)("NoteRepo contract: %s", (_name, make) => {
+  let repo: NoteRepo;
+  beforeEach(() => { repo = make(); });
+  it("trả undefined khi không có", async () => { expect(await repo.find("x")).toBeUndefined(); });
+  it("không rò tham chiếu sau save", async () => {
+    const n = { id: "1", text: "a" };
+    await repo.save(n);
+    n.text = "b";
+    expect(await repo.find("1")).toEqual({ id: "1", text: "a" });
+  });
+});
+```
+
 ## Liên hệ bài tập
 
 Với các bài nặng về kiểu (2, 3, 4, 5, 6), mỗi bài nên có ít nhất một type test: ca "phải biên dịch được, kiểu đúng như thế này" bằng `expectTypeOf`, và ca "phải bị cấm" bằng `@ts-expect-error`. Thử phá có chủ đích (đổi định nghĩa kiểu cho sai) để chắc `npm run type-check` thật sự đỏ. Về coverage, chỉ cần bạn giải thích được nó đo gì và không đo gì; việc cài gói hay không bàn lại với người hướng dẫn.

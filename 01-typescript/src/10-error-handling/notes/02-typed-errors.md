@@ -158,6 +158,57 @@ function hasCode(x: unknown): x is { code: string } {
 
 **So sánh PHP/Laravel.** `catch (TicketNotFoundException $e)` trong PHP được kiểm tra bằng kiểu của lớp ngay trong cú pháp `catch`. JavaScript `catch` không có bộ lọc kiểu, nên phải `if (e instanceof ...)` bên trong và `throw e` lại nếu không khớp. `previous` của exception PHP tương ứng `cause` của JS.
 
+**Thông báo lỗi của compiler quanh `catch`** (đã chạy với `tsc` 7.0.2, `strict`):
+
+```ts
+try { /* ... */ } catch (e) { return e.message; }
+// error TS18046: 'e' is of type 'unknown'.
+
+try { /* ... */ } catch (e: string) { }
+// error TS1196: Catch clause variable type annotation must be 'any' or 'unknown' if specified.
+```
+
+TS chỉ cho chú thích `any` hoặc `unknown` ở `catch`; không có cú pháp để nói "chỉ ném `NotFound`". Đó là lý do phải thu hẹp bằng `instanceof` hoặc type predicate chứ không thể "khai báo" kiểu lỗi.
+
+**Thứ tự `instanceof` từ hẹp đến rộng.** Kiểm lớp cha trước sẽ nuốt lớp con:
+
+```ts
+function wrongOrder(e: unknown): number {
+  if (e instanceof AppError) return 500;
+  if (e instanceof NotFound) return 404;   // không bao giờ tới đây với NotFound
+  return 500;
+}
+```
+
+Đã chạy: `wrongOrder(new NotFound("x"))` trả `500`, còn đảo thứ tự cho `404`. Compiler không cảnh báo vì nhánh thứ hai vẫn "có thể" đạt được với kiểu `unknown`. Khi ánh xạ lỗi sang HTTP, ưu tiên `switch (e.code)` trên union (file 5), nơi thứ tự không quan trọng.
+
+**Gán literal `code` ở lớp con: kiểu của lớp cha vẫn rộng.** Nếu lớp gốc khai báo `readonly code: string` và lớp con ghi đè `override readonly code = "NOT_FOUND" as const`, thì `new NotFound("x").code` có kiểu `"NOT_FOUND"` nhưng `new AppError("y").code` vẫn là `string` (đã kiểm: gán vào biến `"NOT_FOUND"` báo `TS2322`). Union `NotFound | Conflict` thu hẹp được bằng `code`, còn biến kiểu `AppError` thì không; vì vậy hàm ánh xạ nên nhận union cụ thể (hoặc kiểu `KnownError`), không nhận `AppError` chung.
+
+**Ghi log: `console.log(err)` khác `JSON.stringify(err)`.** Với `new AppError("outer", { cause: new Error("inner") })` (đã chạy trên Node 24):
+
+- `console.log(err)` in stack, các thuộc tính tự thêm (`code: 'APP'`) và khối `[cause]: Error: inner ...` kèm stack của nguyên nhân.
+- `JSON.stringify(err)` cho `{"code":"APP","name":"AppError"}`: **không có** `message`, `stack`, `cause`. Cả ba là thuộc tính non-enumerable (`Object.getOwnPropertyDescriptor(err, "cause")?.enumerable === false`).
+
+Khi cần đưa lỗi vào log có cấu trúc (JSON), tự dựng object:
+
+```ts
+function serializeError(err: unknown, depth = 0): unknown {
+  if (!(err instanceof Error)) return { value: String(err) };
+  return {
+    name: err.name,
+    message: err.message,
+    stack: depth === 0 ? err.stack : undefined,
+    cause: err.cause === undefined || depth >= 3 ? undefined : serializeError(err.cause, depth + 1),
+  };
+}
+```
+
+Giới hạn `depth` để tránh vòng lặp nếu hai lỗi trỏ `cause` vào nhau. Đã chạy: ra `{ name, message, stack, cause: { name: "Error", message: "inner" } }`.
+
+**`structuredClone` và `postMessage` làm mất lớp con.** `structuredClone(new NotFound("9"))` (đã chạy) trả về một `Error` thường: `instanceof NotFound` là `false`, `name` là `"Error"` và thuộc tính tự thêm (`ticketId`) biến mất; `message` được giữ, và `cause` được giữ (`new Error("a", { cause: new Error("b") })` sau clone vẫn có `cause.message === "b"`). Hệ quả với worker thread/queue: chuyển `code` và dữ liệu cần thiết dưới dạng object thuần rồi dựng lại lỗi ở phía nhận.
+
+**`Error.captureStackTrace` chỉ có kiểu khi nạp `@types/node`.** Hướng dẫn cũ hay viết `Error.captureStackTrace(this, new.target)` trong constructor. Với cấu hình repo (không khai báo `types`), dòng này báo `TS2339: Property 'captureStackTrace' does not exist on type 'ErrorConstructor'` (đã chạy); với `"types": ["node"]` thì biên dịch được. Với lớp con của `Error` trên ES2022 bạn thường **không cần** gọi nó (đã chạy: không gọi nó mà `err.stack` vẫn bắt đầu bằng `NotFound: nf 5`).
+
 ## Tricks & tips thực tế
 
 - **Một lớp gốc `AppError`/`DomainError` cho cả ứng dụng.** Lý do: một `instanceof` ở error handler phân biệt "lỗi chúng ta chủ động ném" với "lỗi bất ngờ".

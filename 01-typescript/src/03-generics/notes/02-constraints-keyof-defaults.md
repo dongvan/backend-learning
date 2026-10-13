@@ -82,6 +82,22 @@ function pluck<T, K extends keyof T>(items: readonly T[], key: K): T[K][] {
 const ids = pluck([user], "id");   // number[]
 ```
 
+**`keyof` với index signature, số và thuộc tính tuỳ chọn (đã kiểm chứng).**
+
+```ts
+type K1 = keyof Record<string, number>;       // string
+type K3 = keyof { [k: string]: number };      // string | number (vì khoá số cũng được JS chuyển thành chuỗi)
+type K2 = keyof { a: 1; 0: 2 };               // "a" | 0
+
+interface Invoice { id: number; total: number; note?: string }
+declare const inv: Invoice;
+const note = getProp(inv, "note");            // string | undefined (T[K] giữ dấu ? dưới dạng | undefined)
+```
+
+Hệ quả: hàm `getProp` trên `Record<string, X>` nhận mọi chuỗi làm khoá và trả `X`, nên "an toàn theo khoá" chỉ có ý nghĩa khi kiểu có danh sách khoá cụ thể.
+
+**Hàm generic không có excess property check ở đối số.** `function save<T extends { name: string }>(x: T)` chấp nhận `save({ name: "a", extra: 1 })` vì `T` được suy ra gồm cả `extra`; còn tham số gõ thẳng `{ name: string }` thì báo TS2353. Chi tiết ở file 5.
+
 **Constraint tham chiếu type parameter khác** là hợp lệ (như `K extends keyof T` ở trên). Thứ tự khai báo không quan trọng bằng việc `T` phải được khai báo trong cùng danh sách.
 
 **Constraint là hàm hoặc constructor.**

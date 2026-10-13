@@ -93,6 +93,10 @@ Trường hợp thứ hai là "return type inference": kiểu của biến nhậ
 
 **Generic và `any` rò rỉ.** `function clone<T>(x: T): T { return JSON.parse(JSON.stringify(x)); }` compile được vì `any` khớp với `T`. Kiểu bên ngoài trông đúng nhưng thân hàm không được kiểm tra. Thêm `as T` hoặc chú thích `const result: unknown = ...` giúp bạn nhìn thấy chỗ đang tin.
 
+**Giá trị khởi tạo rỗng cho `reduce`.** `items.reduce((acc, it) => [...acc, it.sku], [])` suy ra `acc: never[]` và báo `TS2769: No overload matches this call`; với `{}` thì chỉ mục vào `acc` báo `TS7053`. `reduce` suy `U` từ giá trị khởi tạo, mà `[]`/`{}` không có thông tin. Sửa bằng `reduce<string[]>(..., [])` hoặc `reduce<Record<string, Item>>(..., {})`. Đây là trường hợp truyền type argument tay là đúng. Xem thêm file 5.
+
+**Truyền hàm generic làm callback vẫn suy luận được.** `[1, 2].map(identity)` với `identity<T>(x: T): T` cho `number[]`: compiler suy `T` của `identity` từ kiểu phần tử của mảng (đã kiểm chứng).
+
 **Mảng `readonly` không gán được cho tham số mảng thường.**
 
 ```ts

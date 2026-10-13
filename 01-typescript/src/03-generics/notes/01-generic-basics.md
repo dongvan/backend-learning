@@ -86,6 +86,8 @@ const n: number = s2.pop();     // Lỗi: unknown (và undefined) không gán đ
 
 **So sánh với PHP.** PHP không có generic ở runtime; bạn chỉ có docblock `@template T` / `@param array<T>` cho PHPStan hoặc Psalm, và Laravel dùng `Collection<TKey, TValue>` theo kiểu đó. Điểm khác: docblock chỉ là chú thích cho công cụ phân tích, còn generic của TypeScript là một phần của compiler, nên sai là không build được.
 
+**Các mã lỗi generic đầu tiên bạn sẽ gặp** (đã kiểm chứng với TS 7.0.2): `TS2314` (thiếu type argument cho type alias/interface: `Generic type 'Box' requires 1 type argument(s).`), `TS2558` (truyền sai số lượng type argument cho hàm: `Expected 2 type arguments, but got 1.`), `TS2344` (type argument truyền tay vi phạm constraint), `TS2345` (đối số vi phạm constraint khi để suy luận). Bảng đầy đủ ở file 5.
+
 ## Tricks & tips thực tế
 
 - **Đặt tên type parameter có nghĩa khi có từ hai cái trở lên.** `T` đủ cho một tham số đơn giản; còn `TInput`/`TOutput`, `TEntity`/`TKey` dễ đọc hơn `A`/`B`/`C`, nhất là trong thông báo lỗi dài. Lý do: lỗi generic thường in tên tham số, tên mô tả giúp bạn đoán đúng chỗ.

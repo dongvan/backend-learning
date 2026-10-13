@@ -128,6 +128,11 @@ Khi bật fake timers, `setTimeout`, `setInterval` và `Date` bị thay bằng b
 - **Kiểm tra bằng `toHaveBeenCalledWith` dùng `expect.objectContaining`** khi đối số là object lớn: chỉ ràng buộc phần quan trọng, test ít vỡ khi thêm trường mới.
 - **Với PHPUnit**: `createMock()` / Mockery tương ứng `vi.fn()`; Laravel `Mail::fake()` / `Queue::fake()` tương ứng với fake viết tay. Trong Laravel fake được tích hợp framework; ở TypeScript thuần bạn tự thiết kế interface để có thể fake, và đó là một lợi ích thiết kế chứ không chỉ để test.
 
+- **Phân biệt ba hàm dọn dẹp mock** (`mockClear`, `mockReset`, `mockRestore`) và thứ `vi.restoreAllMocks()` thực sự làm: bảng đối chiếu đã chạy thật ở ghi chú 5, mục 5. Lý do cần nhớ: dọn dẹp sai là nguồn rò rỉ giữa test phổ biến nhất, và hành vi thay đổi giữa các phiên bản Vitest.
+- **Đặt assertion trước khi tiến thời gian với promise sẽ reject**: gọi `const a = expect(p).rejects.toThrow(...)` rồi `await vi.advanceTimersByTimeAsync(...)`, sau cùng `await a` (ví dụ ở ghi chú 5, mục 6). Lý do: promise reject mà chưa ai gắn handler gây Unhandled Rejection làm cả lần chạy báo lỗi.
+- **Test hàm async "ném" bằng `rejects`, không bằng `toThrow`**: `expect(async () => ...).toThrow()` không bắt được vì hàm async không ném đồng bộ (ghi chú 5, mục 7).
+- **Fake nên "bắt chước" hợp đồng thật**: fake repository in-memory phải trả `undefined` khi không thấy và không rò tham chiếu, giống bản DB. Nếu không, test xanh trên fake mà code đỏ trên DB thật (xem mục "test hợp đồng" ở Bài 12).
+
 ## Liên hệ bài tập
 
 Bài 7 (overload, async) và Bài 10 (lỗi có kiểu) là nơi hợp để thực hành `resolves`/`rejects`. Hãy test cả nhánh thành công lẫn thất bại của hàm async, và chứng minh bằng cách cố ý làm hỏng code rằng test của bạn **thật sự đỏ** khi quên `await`. Với hàm có phụ thuộc, thử viết một fake in-memory thay cho mock và so sánh độ dễ đọc.

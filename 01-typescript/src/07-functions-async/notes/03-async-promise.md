@@ -140,6 +140,36 @@ Tuần tự (`for ... await`) và song song (`Promise.all(jobs.map(...))`) cho c
 
 **Top-level await** chỉ dùng được trong module ESM (`module` là `ES2022`/`ESNext`/`NodeNext` và file được Node coi là ESM, tức `package.json` có `"type": "module"` hoặc file `.mts`). Trong CommonJS (hiện trạng repo này) top-level `await` bị báo lỗi. Chi tiết ở Bài 8.
 
+**Các lỗi/cảnh báo compiler liên quan đến `await`** (đã thử trên TS 7.0.2):
+
+```text
+TS2801: This condition will always return true since this 'Promise<boolean>' is always defined.
+        if (isAllowed()) ...   // quên await ở điều kiện: Promise luôn là giá trị "truthy"
+TS1308: 'await' expressions are only allowed within async functions and at the top levels of modules.
+        dùng await trong hàm không có async
+TS1309: The current file is a CommonJS module and cannot use 'await' at the top level.
+        top-level await trong file CJS (hiện trạng repo)
+TS2794: Expected 1 arguments, but got 0. Did you forget to include 'void' in your type argument to 'Promise'?
+        new Promise<number>((resolve) => resolve())
+```
+
+TS2801 đáng nhớ: đây là một trong số ít chỗ compiler tự bắt "quên `await`" mà không cần lint. Nó chỉ xuất hiện khi Promise được dùng trực tiếp làm điều kiện (`if`, `&&`, `?:`). Đã thử: `if (a && x)` và `a ? 3 : 4` với `a: Promise<boolean>` đều báo `TS2801`, nhưng `if (!ok)` thì **không** báo (phủ định một Promise là hợp lệ về kiểu). Vì vậy hãy coi lint (`no-floating-promises`, `no-misused-promises`) là lớp bảo vệ chính.
+
+**Dòng thời gian: microtask và macrotask.** `await` chia hàm làm hai nửa; nửa sau chạy ở *microtask*, trước mọi `setTimeout`/I/O callback tiếp theo. Khi chạy trong file ESM (đã thử trên Node 24.21):
+
+```text
+console.log("sync");
+setTimeout(() => console.log("timeout"), 0);
+Promise.resolve().then(() => console.log("microtask"));
+-> sync, microtask, timeout
+```
+
+Hệ quả thực tế (đã thử): vòng `while (n < 2_000_000) { await Promise.resolve(); n++; }` chạy hết 2 triệu lượt **trước khi** một `setTimeout(..., 0)` đặt từ trước kịp chạy, vì microtask queue không bao giờ rỗng. Với `while (true)` tiến trình trông như treo. Muốn nhường thật sự cho timer/I/O, `await` một timer (`sleep(0)`) hoặc `setImmediate`.
+
+**Không có đồng thời thật sự trong code JS của bạn, nhưng có xen kẽ.** Giữa hai `await`, code khác có thể chạy và sửa trạng thái chung (chi tiết và ví dụ chạy thật ở `05-pitfalls-and-real-cases.md`).
+
+**`new Promise` và kiểu.** Chỉ dùng để bọc API kiểu callback; hàm `resolve` bị buộc đối số khớp `T` (lỗi `TS2794` ở trên). Với `Promise<void>` thì `resolve()` không đối số là hợp lệ. Hàm `setTimeout` bản Promise có sẵn trong `node:timers/promises` (`import { setTimeout as sleep } from "node:timers/promises"`; cần `types: ["node"]`), tránh tự viết lại bọc `new Promise`.
+
 ## Tricks & tips thực tế
 
 - **Luôn `await` hoặc `.catch` mọi Promise bạn tạo ra; bật lint `no-floating-promises`.** Lý do: TS không bắt được Promise bỏ rơi, và lỗi trong đó thành `unhandledRejection`, mặc định Node (từ v15) làm sập tiến trình.

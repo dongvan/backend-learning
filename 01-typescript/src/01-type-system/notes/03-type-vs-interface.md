@@ -34,6 +34,19 @@ interface Window { appVersion: string }   // bổ sung vào interface Window có
 
 Đây là lý do thư viện (Express, global `Window`) dùng `interface`: bạn mở rộng được từ bên ngoài (module augmentation). Trong backend, ví dụ kinh điển là thêm `user` vào `Express.Request`.
 
+**Khi nào hai `interface` trùng tên thực sự bị gộp?** Chỉ khi chúng nằm trong **cùng một scope**:
+
+| Tình huống | Gộp? |
+|---|---|
+| Hai khai báo trong cùng một file (cùng module hoặc cùng global) | Có |
+| Hai file đều là *script* (không có `import`/`export`, không bị ép thành module), cùng khai báo ở global scope | Có, và đây là nguồn gây bug khó thấy |
+| Hai file là *module* (có `export`/`import`) mỗi file khai báo `interface Order` riêng | **Không**, mỗi file có `Order` riêng |
+| Dùng `declare module "x" { interface Y {…} }` hoặc `declare global { … }` | Có, đó là *module augmentation* chủ ý |
+
+Trong repo này, `module: NodeNext` làm `moduleDetection` mặc định là `force`, nghĩa là **mọi file đều được coi là module** kể cả khi không có `import`/`export` (đã kiểm chứng: hai file khai báo `interface Order` riêng không gộp và không xung đột). Vì vậy ở đây merge ngầm giữa các file chỉ xảy ra khi bạn chủ động dùng `declare global`/`declare module`. Trong project cấu hình khác (`moduleDetection: "auto"`, hay file `.d.ts` toàn cục), nguy cơ có thật.
+
+Merge trong cùng scope vẫn có kiểm tra: cùng tên thuộc tính khác kiểu báo `TS2717 Subsequent property declarations must have the same type`; `type` trùng tên báo `TS2300 Duplicate identifier`.
+
 **Mở rộng**
 
 ```ts
@@ -59,6 +72,25 @@ type Readonlyify<T> = { readonly [K in keyof T]: T[K] };
 **`readonly`** chỉ có tác dụng lúc compile (không `Object.freeze`). `readonly T[]` cấm `push`, `pop`, gán theo chỉ số. Nó là *shallow*: `readonly items: OrderItem[]` vẫn cho phép sửa từng phần tử.
 
 **Hiệu năng**: `interface extends` được compiler cache tốt hơn `&` trên kiểu phức tạp. Chỉ đáng quan tâm ở codebase lớn.
+
+**Khác biệt tinh tế: index signature ngầm.** Alias `type` của object literal gán được cho `Record<string, unknown>`, còn `interface` thì không:
+
+```ts
+interface I { a: number }
+type T = { a: number };
+
+const r1: Record<string, unknown> = {} as T;   // OK
+const r2: Record<string, unknown> = {} as I;   // Lỗi: interface không có index signature ngầm
+```
+
+Lý do: `interface` có thể bị merge thêm thuộc tính ở nơi khác nên compiler không dám coi nó "đóng", còn `type` thì đóng. Gặp khi truyền kiểu domain vào hàm nhận `Record<string, unknown>` (ví dụ logger, serializer).
+
+**Khi nào `interface` là lựa chọn tốt thật sự**
+- Mô tả contract cho `class … implements` (cả `type` cũng implements được, nhưng quy ước thường dùng `interface`).
+- Cần module augmentation (thêm `user` vào `Express.Request`).
+- Cây kế thừa rộng (`extends` báo lỗi xung đột ngay).
+
+**Khi nào `type` bắt buộc**: union, tuple, mapped/conditional/template literal type, hoặc alias cho primitive.
 
 ## Tricks & tips thực tế
 

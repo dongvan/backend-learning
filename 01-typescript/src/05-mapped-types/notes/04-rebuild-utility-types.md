@@ -102,6 +102,27 @@ type DistOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
 **So sánh với PHP/Laravel.** Đây là phần tương ứng với việc tách Form Request / DTO khỏi Model: `CreateCustomer` (bỏ `id`, thêm default) khác `Customer`. Ở Laravel bạn tách bằng class và `$request->validated()`; ở TS dẫn xuất từ một entity để không lệch (nhưng validation runtime vẫn riêng, Bài 9).
 
+**Yêu cầu ít nhất một trong các khoá (kiểu `RequireAtLeastOne`).** Rất hợp form liên hệ ("email hoặc phone"):
+
+```ts
+type RequireAtLeastOne<T, K extends keyof T = keyof T> =
+  K extends keyof T ? Omit<T, K> & Required<Pick<T, K>> : never;
+
+type Contact = { email?: string; phone?: string };
+const c1: RequireAtLeastOne<Contact> = { email: "a" };   // OK
+const c2: RequireAtLeastOne<Contact> = {};               // lỗi TS2322: '{}' không gán được cho union (Omit<..> & Required<Pick<..>>) | (...)
+```
+
+Cơ chế: `K extends keyof T ? ... : never` là conditional phân phối trên `K` (Bài 6), nên với mỗi khoá nó sinh một biến thể "khoá này bắt buộc", rồi gộp bằng union. Kết quả là union, nên cần ít nhất một nhánh thoả. Đây không thay thế validate runtime, chỉ buộc code gọi truyền đủ.
+
+**`StrictOmit` bắt lỗi chính tả khoá:**
+
+```ts
+type StrictOmit<T, K extends keyof T> = Omit<T, K>;
+type SO = StrictOmit<{ a: 1 }, "b">;
+// TS2344: Type '"b"' does not satisfy the constraint '"a"'.
+```
+
 ## Tricks & tips thực tế
 
 - **Dẫn xuất DTO từ entity một lần, đặt tên rõ**: `type CreateOrderInput = SetOptional<Omit<Order, "createdAt">, "status">`. Lý do: đổi entity thì DTO theo, compiler chỉ ra mọi chỗ cần sửa; nhưng đừng chồng quá 2–3 lớp vì thông báo lỗi sẽ khó đọc.

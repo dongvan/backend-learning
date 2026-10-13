@@ -77,6 +77,26 @@ const emails = pluck([{ email: "a", n: 1 }], "email");   // string[]
 
 **So sánh với PHP/Laravel.** Giống phép đọc `$order['customer']['address']['city']` nhưng trên *kiểu*. PHP không có lookup type; docblock `@return Order['status']` không tồn tại, bạn phải dùng enum riêng hoặc PHPStan `key-of<>`/`value-of<>` (công cụ ngoài, không phải ngôn ngữ).
 
+**Kết hợp indexed access với hàm.** `Parameters<F>[1]` lấy kiểu tham số thứ hai, `Parameters<F>["length"]` cho số tham số:
+
+```ts
+function send(to: string, subject: string, urgent?: boolean) { return { to, subject, urgent }; }
+// Parameters<typeof send>[1]        là string
+// Parameters<typeof send>["length"] là 2 | 3     (tham số optional làm độ dài có thể là 2 hoặc 3)
+```
+
+**Index vào union của mảng.** `(string[] | number[])[number]` là `string | number`: kết quả là union các kiểu phần tử, nên trả về giá trị đọc ra có thể là một trong hai.
+
+**Đi sâu qua mảng.** `Order["items"][number]["sku"]` đọc từ trái sang phải: thuộc tính `items`, rồi phần tử, rồi thuộc tính `sku`. Dùng khi chỉ cần một trường của phần tử mà không muốn khai báo `interface Item` riêng.
+
+**Các lỗi hay gặp khi viết `T[K]` (đã kiểm chứng, tsc 7.0.2).**
+- `function g<T, K>(o: T, k: K) { return o[k]; }` lỗi **TS2536: Type 'K' cannot be used to index type 'T'**: thêm ràng buộc `K extends keyof T`.
+- `Cfg["nope"]` lỗi **TS2339: Property 'nope' does not exist on type 'Cfg'**: khoá không tồn tại.
+- `People[typeof lkey]` với `let lkey = "name"` lỗi **TS2537: Type 'People' has no matching index signature for type 'string'**: `let` bị widen thành `string`, dùng `const`.
+- Truy cập qua thuộc tính optional (`Cfg["db"]["host"]` khi `db?:`) lỗi TS2339 vì kiểu trung gian có `undefined`: dùng `NonNullable<Cfg["db"]>["host"]`.
+
+Danh sách đầy đủ kèm ví dụ nằm ở file 05 của bài này.
+
 ## Tricks & tips thực tế
 
 - **Bản đồ sự kiện → payload (rất hợp backend).** Một interface làm nguồn sự thật, hàm generic ép payload đúng theo tên:

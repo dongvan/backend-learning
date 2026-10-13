@@ -85,6 +85,31 @@ TicketDtoSchema.parse({ ...t, createdAt: t.createdAt.toISOString() });
 
 **Serialize `Date` và các kiểu lạ.** `JSON.stringify` chuyển `Date` thành chuỗi ISO (`"1970-01-01T00:00:00.000Z"`), bỏ khoá giá trị `undefined`, giữ `null`, và **ném lỗi với `bigint`** ("Do not know how to serialize a BigInt", đã chạy). Hệ quả: kiểu TypeScript của object trước khi stringify (có `Date`) khác kiểu mà client nhận (`string`). Đó là lý do cần DTO tách riêng với `createdAt: string`. Id dạng `bigint` hay số lớn nên đi dưới dạng chuỗi.
 
+**Bảng "giá trị nào sống sót qua `JSON.stringify`"** (đã chạy trên Node 24):
+
+| Giá trị trong object | Kết quả trong JSON |
+|---|---|
+| `undefined`, hàm, `Symbol` | **khoá bị bỏ** (trong mảng thì thành `null`) |
+| `NaN`, `Infinity` | `null` (mất thông tin im lặng) |
+| `Date` | chuỗi ISO (`"1970-01-01T00:00:00.000Z"`) |
+| `Map`, `Set` | `{}` (rỗng, không báo lỗi) |
+| `bigint` | **ném** `TypeError: Do not know how to serialize a BigInt` |
+| tham chiếu vòng | **ném** `TypeError: Converting circular structure to JSON` |
+
+Hệ quả cho contract: (1) một trường tuỳ chọn `note?: string` vắng mặt hay `undefined` thì *không có khoá* ở phía client, khác với `note: null`; chọn một cách và ghi vào contract (thường: "vắng mặt" nghĩa là "không có", `null` nghĩa là "đã xoá/rỗng"); (2) `Map`/`Set` trong DTO là lỗi âm thầm (client nhận `{}`), nên mapper phải đổi thành mảng/object thuần; (3) `NaN` do phép chia cho 0 hay `Number("abc")` ra `null` trong response mà không có lỗi nào, hãy validate số trước khi xuất.
+
+**Kiểm tra mapper không lộ trường: test dạng "allow-list".** Đây là phiên bản chạy được của lời khuyên "test hợp đồng":
+
+```ts
+// với toTicketDto ở đầu file (không cần framework)
+const dto = toTicketDto(ticket);
+// mong đợi đúng tập khoá, không hơn không kém
+const keys = Object.keys(dto).sort();
+// keys phải bằng ["assigneeId", "createdAt", "id", "status", "title"]
+```
+
+So sánh *tập khoá* (không chỉ giá trị) bắt được cả trường thừa lẫn trường thiếu. Nếu bạn dùng Vitest, `expect(Object.keys(dto).sort()).toEqual([...])` làm đúng việc này; đây là nội dung của Bài 11.
+
 **Contract lỗi: hình dạng nhất quán.** Mọi endpoint trả lỗi cùng một dạng để client viết một chỗ xử lý:
 
 ```ts

@@ -158,6 +158,22 @@ export const port = env.PORT;
 export const port2 = env["PORT"];                   // đúng cách
 ```
 
+**`strictPropertyInitialization` và `noImplicitThis`: hai lỗi quen thuộc với class/callback** (đã thử):
+
+```text
+class A { name: string; constructor() {} }
+-> TS2564: Property 'name' has no initializer and is not definitely assigned in the constructor.
+
+const o = { m() { return function () { return this; }; } };
+-> TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+```
+
+TS2564: gán trong constructor, cho giá trị mặc định tại chỗ khai báo, đánh dấu `name?: string`, hoặc `name!: string` khi một framework (ORM, DI) gán hộ lúc chạy (đây là lời hứa, kèm comment lý do). Với TS2683, dùng arrow function (không có `this` riêng) hoặc khai báo tham số `this` (xem Bài 7).
+
+**`strictBuiltinIteratorReturn` (TS 5.6+, nằm trong `strict`).** Gọi `.next()` trên iterator dựng sẵn (`[1][Symbol.iterator]()`, `Map.prototype.entries()`...) cho `value: number | undefined`. Đã thử: `const v: number = it.next().value` báo `TS2322: Type 'number | undefined' is not assignable to type 'number'`, và tắt riêng cờ này (`"strictBuiltinIteratorReturn": false`) thì hết lỗi. Dùng `for...of` thay vì gọi `.next()` tay, hoặc kiểm tra `result.done` trước.
+
+**`noUncheckedSideEffectImports` (TS 5.6+).** Import không tên (`import "./setup.js"`, `import "./theme.css"`) trước đây không được kiểm tra, gõ sai đường dẫn vẫn "xanh". Đã thử trên TS 7.0.2: **không bật cờ vẫn báo** `TS2882: Cannot find module or type declarations for side-effect import of './missing.js'`, tức đã mặc định bật ở bản này (hãy tự kiểm chứng nếu dùng TS cũ hơn). Hệ quả: import file không phải code (`.css`, `.svg`) trong backend/SSR cần khai báo `declare module "*.css";` trong một `.d.ts`.
+
 **Cạm bẫy nhận biết: cờ bật nhưng code dùng `!` hoặc `as` để tắt nó.** `items[0]!` và `x as string` bỏ qua kiểm tra. Dùng khi bạn *thật sự* biết hơn compiler và nên kèm comment lý do.
 
 ## Tricks & tips thực tế

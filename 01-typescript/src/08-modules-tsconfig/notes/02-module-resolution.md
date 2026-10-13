@@ -67,7 +67,54 @@ Và hai mặc định mới đáng nhớ: `strict` mặc định **bật** (mộ
 | `tsx src/main.ts` | Chạy được (tsx đọc `paths` của tsconfig) |
 | `vitest` (không cấu hình thêm) | Lỗi `Cannot find package '@/lib/greet.js'`; cần khai báo `resolve.alias` trong cấu hình Vitest hoặc plugin riêng |
 
-Vì thế `paths` dễ tạo cảm giác "chạy được ở dev, vỡ ở production". Lựa chọn thực tế: (a) dùng đường dẫn tương đối thường, đơn giản nhất; (b) dùng `imports` trong `package.json` (alias chuẩn Node, bắt đầu bằng `#`); (c) dùng alias nhưng cấu hình **mọi** thứ chạy code (bundler, vitest, tsx, bước build) cho khớp. Cái nào cũng phải có chủ đích. (Ví dụ `imports` ở mục (b) chưa được thử trong ghi chú này.)
+Vì thế `paths` dễ tạo cảm giác "chạy được ở dev, vỡ ở production". Lựa chọn thực tế: (a) dùng đường dẫn tương đối thường, đơn giản nhất; (b) dùng `imports` trong `package.json` (alias chuẩn Node, bắt đầu bằng `#`); (c) dùng alias nhưng cấu hình **mọi** thứ chạy code (bundler, vitest, tsx, bước build) cho khớp. Cái nào cũng phải có chủ đích. Đã thử `imports` (mục (b)) trên TS 7.0.2 + Node 24.21 với `package.json` có `"imports": { "#lib/*": "./dist/lib/*" }`: `import { greet } from "#lib/greet.js"` qua `tsc` không lỗi (compiler ánh xạ về file nguồn `src/lib/greet.ts` nhờ `outDir`/`rootDir`) và `node dist/main.js` chạy đúng. Điểm khác `paths`: Node tự hiểu nên không cần cấu hình thêm ở runtime. Điều kiện: ánh xạ trỏ vào thư mục **đầu ra** (`dist`), alias phải bắt đầu bằng `#`, và vẫn phải ghi đuôi `.js` ở ESM. Vitest và `tsx` có thể cần kiểm tra riêng (chưa thử).
+
+**Package có trường `exports`: không import tuỳ tiện vào ruột được.** Khi một package khai báo `exports`, chỉ các đường dẫn được liệt kê mới import được (đã thử với package giả `fakepkg` chỉ export `"."`):
+
+```text
+import { hi } from "fakepkg";                         -> OK
+import { secret } from "fakepkg/internal/x.js";       -> tsc:  TS2307: Cannot find module 'fakepkg/internal/x.js' or its corresponding type declarations.
+                                                         node: ERR_PACKAGE_PATH_NOT_EXPORTED: Package subpath './internal/x.js' is not defined by "exports"
+```
+
+Nghĩa là file có thật trong `node_modules` nhưng package cố ý không cho import. Đừng "với tay" vào `dist/internal/...` của thư viện; mở issue hoặc dùng API công khai. Trong `exports`, điều kiện `"types"` nên đứng **trước** `"default"`/`"import"` vì điều kiện được duyệt theo thứ tự khai báo (đã thử với `"types"` đứng đầu; trường hợp đảo thứ tự chưa thử).
+
+**Import thư mục và import thiếu đuôi.** Trong ESM, `import "./dir"` (thư mục có `index.ts`) không hoạt động như CJS cũ:
+
+```text
+tsc:  TS2834: Relative import paths need explicit file extensions in ECMAScript imports when
+      '--moduleResolution' is 'node16' or 'nodenext'. Consider adding an extension to the import path.
+node: ERR_UNSUPPORTED_DIR_IMPORT: Directory import '.../dist/dir' is not supported resolving ES modules
+```
+
+Viết `./dir/index.js`. (Với import thiếu đuôi trỏ vào thư mục, mã lỗi quan sát được là `TS2834`; `01-esm-vs-cjs.md` ghi `TS2835` cho trường hợp file đơn. Hai mã khác nhau, hãy đọc kỹ thông báo thay vì dựa vào số.) Hệ quả cho "barrel file": `import { x } from "./models"` phải thành `from "./models/index.js"`.
+
+**Gõ kiểu cho `process.env` bằng khai báo toàn cục.** Tình huống backend rất thật: muốn `process.env.DATABASE_URL` là `string` thay vì `string | undefined`. Đặt file `src/env.d.ts` (nằm trong `include`):
+
+```ts
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      DATABASE_URL: string;
+      PORT?: string;
+    }
+  }
+}
+export {};   // biến file thành module để `declare global` có hiệu lực
+```
+
+Đã thử: `const url: string = process.env.DATABASE_URL` hợp lệ, còn `const port: number = process.env.PORT` báo `TS2322: Type 'string | undefined' is not assignable to type 'number'`; khoá không khai báo (`process.env["OTHER"]`) vẫn là `string | undefined`. Cảnh báo: đây chỉ là lời hứa với compiler, giá trị thật đến từ môi trường. Nên validate `process.env` bằng Zod một lần lúc khởi động (Bài 9) rồi dùng đối tượng đã validate, thay vì tin khai báo này.
+
+**Tách cấu hình build khỏi cấu hình type-check.** Vì test nằm dưới `src/`, `tsc` sẽ biên dịch cả `*.test.ts` ra `dist/` (đã thử: `dist/a.test.js` xuất hiện). Một `tsconfig.build.json` kế thừa và loại test:
+
+```jsonc
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*.test.ts"]
+}
+```
+
+Chạy `tsc -p tsconfig.build.json` thì `dist/` không có file test (đã thử). Theo tài liệu TSConfig, `include`/`exclude`/`files` ở file kế thừa **ghi đè** giá trị của file gốc chứ không cộng dồn (chưa thử riêng, hãy tự kiểm chứng bằng `--showConfig`). Dùng `tsc -p tsconfig.build.json --showConfig` để xem cấu hình sau khi gộp và danh sách `files` thực sự được nạp, và `--explainFiles` để biết file được kéo vào do `include` hay do import. Giữ `tsconfig.json` gốc cho IDE và `type-check` (bao cả test).
 
 **So với PSR-4 của Composer.** `"autoload": { "psr-4": { "App\\": "app/" } }` giúp **runtime** (autoloader sinh bởi Composer) và IDE cùng hiểu `App\Models\User` nằm ở `app/Models/User.php`. `paths` chỉ làm được nửa "IDE/compiler" của chuyện đó. Nửa "runtime" không có trong Node, bạn phải tự bảo đảm.
 

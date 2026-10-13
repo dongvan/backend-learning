@@ -107,6 +107,13 @@ type MapKey<M> = M extends Map<infer K, unknown> ? K : never;
 
 **So sánh với PHP/Laravel.** PHP có reflection (`ReflectionFunction::getReturnType()`) làm điều tương tự ở **runtime**. `infer` làm ở compile time, không tốn chi phí và không cần tồn tại hàm thật khi chạy. PHPStan có `@template` + `@param class-string<T>` để suy luận kiểu; ý tưởng gần với `infer`.
 
+**Những chỗ `infer` không làm được hoặc làm khác bạn nghĩ** (đã kiểm chứng):
+- `Parameters` của hàm overload chỉ cho **overload cuối** (đã nêu ở trên); tham số `this` giả (`this: A`) không nằm trong kết quả.
+- `infer` ở vị trí tham số (contravariant) cho giao: `UnionToIntersection<{ a: 1 } | { b: 2 }>` là `{ a: 1 } & { b: 2 }` (file 05, mục 7).
+- `Awaited` gỡ cả thenable (có `then`), bản `T extends Promise<infer U>` tự viết thì không (file 05, mục 8).
+- Viết `infer U` ngoài `extends` của conditional bị TS1338: "'infer' declarations are only permitted in the 'extends' clause of a conditional type."
+- `ReturnType<string>` bị TS2344: "Type 'string' does not satisfy the constraint '(...args: any) => any'." (thường do quên `typeof`).
+
 ## Tricks & tips thực tế
 
 - **Dùng `ReturnType`/`Parameters`/`Awaited` có sẵn trước khi tự viết.** Lý do: chúng đã xử lý biên (overload, optional, rest). Chỉ tự viết `infer` khi cần dạng chưa có (ví dụ `Parameters` của method trên class: `Parameters<Repo["find"]>`).

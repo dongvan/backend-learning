@@ -51,6 +51,64 @@ const mixed = [1, "a"];   // (string | number)[]
 
 **Inference theo hướng ngược**: tham số kiểu generic cũng được suy ra từ đối số (`identity("a")` → `T = "a"`). Sẽ học kỹ ở Bài generics.
 
+**Các trường hợp suy luận kiểu trả về** (đều đã kiểm chứng với `tsconfig.json` của repo):
+
+```ts
+function parseQty(raw: string) {          // number | null
+  const n = Number(raw);
+  if (Number.isNaN(n)) return null;
+  return n;
+}
+
+async function load() { return 1; }       // Promise<number>
+
+function failDecl(msg: string) { throw new Error(msg); }          // void (!)
+const failArrow = (msg: string) => { throw new Error(msg); };     // never
+
+function maybe(flag: boolean) {           // number | undefined
+  if (flag) return 1;
+  return;
+}
+```
+
+- Hàm khai báo bằng `function` mà chỉ `throw` được suy ra là `void`, còn arrow function hay function expression thì ra `never`. Vì vậy hàm luôn throw nên **ghi `: never` tường minh** (xem ghi chú 4).
+- Hàm `async` luôn trả `Promise<...>`; `return 1` trong hàm `async` cho ra `Promise<number>`.
+- Hàm có nhánh `return;` (không giá trị) làm kiểu có thêm `undefined`.
+
+**Sự thay đổi kiểu âm thầm**: kiểu suy luận đi theo thân hàm. Sửa thân hàm là kiểu trả về cũng đổi, và lỗi chỉ hiện ở nơi gọi (có khi ở file khác, hay không hiện nếu chỗ gọi dùng được cả hai kiểu).
+
+```ts
+function total(prices: readonly number[]) {
+  return prices.reduce((a, b) => a + b, 0);           // number
+}
+
+// Sau này ai đó sửa để "tiện hiển thị":
+function total2(prices: readonly number[]) {
+  return prices.reduce((a, b) => a + b, 0) + " đ";    // string, không báo lỗi ở đây
+}
+```
+
+Ghi `: number` thì lỗi báo ngay ở thân hàm, đúng chỗ người sửa đang đứng. Đó là lý do chính để ghi tường minh ở hàm export; "ép kiểu" không phải lý do.
+
+**`reduce` và giá trị khởi tạo**: kiểu của accumulator suy ra từ giá trị khởi tạo. Khởi tạo bằng `0` ra `number`, nhưng khởi tạo bằng `[]` ra `never[]` và lỗi khi `push`:
+
+```ts
+xs.reduce((acc, x) => { acc.push(x); return acc; }, []);            // Lỗi: acc là never[]
+xs.reduce<string[]>((acc, x) => { acc.push(x); return acc; }, []);  // OK: chỉ rõ tham số kiểu
+```
+
+**Checklist: khi nào ghi kiểu trả về tường minh**
+
+| Tình huống | Ghi tường minh? | Lý do |
+|---|---|---|
+| Hàm export, API công khai của module | Có | Hợp đồng ổn định; thay đổi thân hàm không làm đổi kiểu ngầm |
+| Hàm đệ quy | Có | Compiler không suy ra được vòng lặp (lỗi *implicitly has return type 'any'*) |
+| Hàm luôn throw | Có, `: never` | Suy ra có thể là `void` (function declaration) |
+| Hàm `async` export | Có, `Promise<T>` | Tránh `Promise<Promise<…>>` hay quên `return` |
+| Type predicate / assertion function | Bắt buộc | `x is T`, `asserts x is T` |
+| Callback ngắn, arrow cục bộ | Không | Ồn, không có lợi ích |
+| Biến cục bộ | Không | Làm mất literal type |
+
 ## Tricks & tips thực tế
 
 - **`as const`** để giữ literal và `readonly` cho cả cây object:

@@ -147,6 +147,36 @@ Kẻ tấn công thu được cấu trúc mạng, đường dẫn deploy, tên t
 
 **Cả khi `NODE_ENV=development`** bạn có thể muốn trả stack cho tiện, nhưng hãy bật qua cờ cấu hình rõ ràng, mặc định tắt. Laravel làm tương tự với `APP_DEBUG` (bật thì trang lỗi chi tiết, tắt thì chỉ "Server Error").
 
+**Thông báo lỗi khi quên ánh xạ một lỗi** (đã chạy với `tsc` 7.0.2; `CartError` là union theo `kind`: `"empty"`, `"item_unavailable"` (có `sku`) và `"coupon_expired"` (có `code: string`)):
+
+```ts
+function describe(e: CartError): string {
+  switch (e.kind) {
+    case "empty": return "a";
+    case "item_unavailable": return "b";
+    default: return assertNever(e);
+  }
+}
+// error TS2345: Argument of type '{ kind: "coupon_expired"; code: string; }' is not assignable to parameter of type 'never'.
+
+const STATUS: Record<CartError["kind"], number> = { empty: 400, item_unavailable: 409 };
+// error TS2741: Property 'coupon_expired' is missing in type '{ empty: number; item_unavailable: number; }' but required in type 'Record<"coupon_expired" | "empty" | "item_unavailable", number>'.
+
+const STATUS2 = { empty: 400, item_unavailable: 409, coupon_expired: 410 } satisfies Record<CartError["kind"], number>;
+// OK. `satisfies` (TS 4.9+) kiểm đủ khoá mà vẫn giữ kiểu suy ra của object; ở đây giá trị là `number`
+// (đã kiểm: gán STATUS2.empty vào biến kiểu 400 báo TS2322). Muốn kiểu literal `400`: viết `{ ... } as const satisfies Record<...>` (đã kiểm trên TS 7.0.2 của repo)
+```
+
+Hai dạng báo lỗi khác nhau: `assertNever` chỉ ra *nhánh cụ thể còn sót* (tên nhánh có trong kiểu `never` đối số), còn `Record` chỉ ra *khoá thiếu*. Bảng tra thường gọn hơn `switch` khi mỗi lỗi chỉ ánh xạ ra một status.
+
+**Dữ liệu JSON hỏng cũng là lỗi nghiệp vụ.** `JSON.parse("{bad")` ném `SyntaxError` (đã chạy; message dạng `Expected property name or '}' in JSON at position 1 ...` tuỳ phiên bản Node). Đây là lỗi của client (400), nhưng message chứa chi tiết parser và có thể thay đổi giữa phiên bản; trả `code: "INVALID_JSON"` và message do bạn viết, đừng chuyển tiếp message gốc. Nếu framework tự parse body trước handler, hãy kiểm tra xem nó ném lỗi loại nào và dịch ở error handler (tuỳ framework, cần tự kiểm chứng).
+
+**401, 403 và 404: đừng tiết lộ sự tồn tại.** Khi người dùng không có quyền với tài nguyên của người khác, trả 404 thay vì 403 ngăn họ dò xem id nào tồn tại. Với đăng nhập, dùng một thông điệp chung cho "sai email" và "sai mật khẩu". Đây là quyết định sản phẩm (đánh đổi giữa dễ debug và bảo mật), nhưng phải quyết định có chủ đích và ghi vào contract.
+
+**`429` và `503` thường đi kèm gợi ý thử lại.** Header `Retry-After` (RFC 9110) cho client biết nên chờ bao lâu; chỉ trả khi bạn thật sự biết con số. Không có `Retry-After` thì client tự backoff. Đây là một phần của contract, không phải chi tiết triển khai.
+
+**Lỗi ở nhiều tầng: ai ghi log, ai dịch?** Mô hình gọn: service/repository chỉ *ném* (kèm `cause`), không log; ranh giới HTTP *log một lần* rồi *dịch*. Ngoại lệ hợp lý: tầng nào *nuốt* lỗi (ví dụ thử lại rồi thành công) thì tầng đó phải log cảnh báo, vì không còn ai thấy lỗi đó nữa.
+
 **Unhandled error và tiến trình.** Lỗi ném trong callback/async không có `catch` có thể làm sập tiến trình hoặc treo request. Một error handler cấp cao (middleware cuối cùng của framework) chính là chỗ gom: đảm bảo mọi request đều nhận một response. Ở NestJS (Phase 03) vai trò này là *exception filter*; ở Express là middleware lỗi 4 tham số. Nguyên tắc ở đây không đổi.
 
 **So sánh PHP/Laravel.** `App\Exceptions\Handler` (hoặc `bootstrap/app.php` với `withExceptions`) đăng ký `render` cho từng loại exception và `report` để ghi log: đây chính là `toHttp` ở trên cộng với `logger`. Exception tự định nghĩa có thể có `render()` riêng. Khác biệt: ở TypeScript, bạn dùng kiểu và `switch` exhaustive để **trình biên dịch** bảo đảm mọi lỗi đã được ánh xạ.

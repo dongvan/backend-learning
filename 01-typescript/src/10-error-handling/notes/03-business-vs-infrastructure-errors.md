@@ -63,6 +63,61 @@ async function findTicket(id: string): Promise<{ id: string }> {
 
 **Lỗi hạ tầng và retry.** Chỉ retry thao tác **idempotent** hoặc có khoá idempotency; dùng backoff và giới hạn số lần. Retry mù khi ghi (tạo order) có thể tạo trùng. Đây là chủ đề sâu hơn ở các phase sau; ở Phase 01 bạn chỉ cần biết nó là lý do để *phân loại* lỗi ngay từ đầu.
 
+**Tình huống thật: gọi dịch vụ ngoài bằng `fetch` (đã chạy trên Node 24).** Ba điều khiến người mới nhầm lẫn:
+
+1. `fetch` **không ném** khi server trả 4xx/5xx; nó chỉ ném khi không có phản hồi (DNS, kết nối, hết giờ). Đã chạy: server trả 500 thì `await fetch(...)` vẫn resolve với `status: 500`, `ok: false`. Bạn phải tự kiểm `res.ok`/`res.status`.
+2. Lỗi mạng là `TypeError` với `message: "fetch failed"`, và chi tiết thật nằm ở `cause` (ví dụ DNS lỗi cho `cause.cause.code === "ENOTFOUND"` trong thử nghiệm của tôi; cấu trúc `cause` có thể khác theo loại lỗi và phiên bản Node, hãy tự in ra để xem).
+3. `AbortSignal.timeout(ms)` làm `fetch` reject bằng `DOMException` có `name === "TimeoutError"` (đã chạy với server chấp nhận kết nối nhưng không trả lời). Giá trị `message` là `The operation was aborted due to timeout`.
+
+Từ đó dịch ra lỗi của bạn, với cờ `retryable`:
+
+```ts
+class UpstreamError extends Error {
+  constructor(message: string, readonly retryable: boolean, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = new.target.name;
+  }
+}
+
+async function callPayments(url: string): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(200) });
+  } catch (cause) {
+    throw new UpstreamError("payments unreachable", true, { cause }); // mạng/hết giờ: thử lại được
+  }
+  if (res.status >= 500) throw new UpstreamError(`payments ${res.status}`, true);
+  if (!res.ok) throw new UpstreamError(`payments ${res.status}`, false); // 4xx là lỗi của ta, thử lại vô ích
+  return res.json();
+}
+
+async function retry<T>(fn: () => Promise<T>, retries: number, baseMs: number): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const retryable = err instanceof UpstreamError && err.retryable;
+      if (!retryable || attempt >= retries) throw err;
+      await new Promise((r) => setTimeout(r, baseMs * 2 ** attempt)); // backoff theo cấp số nhân
+    }
+  }
+}
+```
+
+Đã chạy với server giả: đường `/flaky` (503, 503, rồi 200) trả kết quả sau đúng 3 lần gọi; `/bad` (400) **không** được thử lại (1 lần gọi) và ném `UpstreamError`; `/hang` hết giờ hai lần (1 lần thử lại) và `cause.name === "TimeoutError"`. Hai chú ý: `fn` trong `retry` phải **idempotent** (chỉ nên đọc, hoặc ghi có khoá idempotency); và cần thêm *jitter* (ngẫu nhiên hoá thời gian chờ) khi nhiều tiến trình cùng thử lại, kẻo chúng dồn dập đúng một lúc (mã trên chưa có, vì mục tiêu là minh hoạ phân loại lỗi).
+
+**Nhiều thao tác song song: ba hàm, ba ngữ nghĩa lỗi.**
+
+| Hàm | Khi một Promise reject | Dùng khi |
+|---|---|---|
+| `Promise.all` | reject ngay với lỗi đầu tiên; các Promise còn lại **vẫn chạy tiếp** (đã chạy: nhánh chậm vẫn hoàn tất sau khi `all` đã reject) | tất cả phải thành công hoặc huỷ cả nhóm |
+| `Promise.allSettled` | không bao giờ reject; trả mảng `{ status: "fulfilled" \| "rejected" }` | muốn biết kết quả từng việc (gửi thông báo hàng loạt) |
+| `Promise.any` | resolve với cái thành công đầu tiên; nếu **tất cả** reject thì ném `AggregateError` có `.errors` (đã chạy: `errors.length === 2`) | đọc từ nhiều bản sao/nhà cung cấp dự phòng |
+
+Điều đáng nhớ: `Promise.all` *không huỷ* các việc còn lại. Nếu chúng ghi dữ liệu thì lỗi ở một việc không hoàn tác việc khác; cần cơ chế bù trừ (xem tips). `Promise.allSettled` trả `reason` kiểu `any`, nên thu hẹp bằng `instanceof` trước khi dùng.
+
+**Lỗi hạ tầng nào cũng "đến từ đâu đó": ghi lại ngữ cảnh.** Khi bọc, đặt vào message hoặc thuộc tính *thao tác* và *tham số không nhạy cảm* (`findTicket(t1)`), không đặt toàn bộ input. Lý do: log của bạn cần trả lời "việc gì thất bại với cái gì", nhưng input thô có thể chứa dữ liệu cá nhân.
+
 **Lỗi hiểu theo "ai là người phải làm gì".**
 
 - Nghiệp vụ: *người dùng/client* phải làm gì đó khác đi.
@@ -86,6 +141,11 @@ Thông điệp, mức log và cảnh báo (alert) đều bám theo câu hỏi n�
 - **Debug 500 khó hiểu**: lấy `requestId` từ response, tìm log cùng id, đọc chuỗi `cause` (dùng hàm `rootCause` ở file 2) để thấy nguyên nhân gốc. Lý do: lỗi bọc nhiều tầng, thông điệp trên cùng thường chỉ là "X failed".
 - **Test cả hai nhánh của hàm bọc lỗi**: nhánh lỗi nghiệp vụ đi qua nguyên vẹn và nhánh lỗi lạ bị bọc kèm `cause`. Lý do: đây là chỗ dễ viết ngược (bọc nhầm lỗi nghiệp vụ thành 500).
 - **Cẩn thận lỗi do thư viện ném không phải `Error`**: chuẩn hoá bằng `toError` ở rìa (file 2) trước khi phân loại.
+
+- **Kiểm `res.ok` sau mỗi `fetch`.** Lý do: `fetch` chỉ ném khi không có phản hồi; 4xx/5xx trả về bình thường và `res.json()` trên một trang lỗi sẽ lại ném một lỗi khác, che mất nguyên nhân thật.
+- **Luôn đặt timeout cho gọi mạng** (`AbortSignal.timeout(ms)`). Lý do: không có timeout, một dịch vụ treo giữ cạn kết nối và request của bạn treo theo.
+- **Phân loại thử lại theo *loại* lỗi, không theo "có lỗi".** Lý do: thử lại 4xx hoặc lỗi nghiệp vụ không bao giờ đổi kết quả, chỉ tốn tài nguyên và có thể tạo trùng.
+- **Dùng `Promise.allSettled` khi các việc độc lập và bạn cần báo cáo từng việc.** Lý do: `Promise.all` chỉ báo lỗi đầu tiên; lỗi thứ hai trở đi bị bỏ qua âm thầm (đã chạy: không có unhandled rejection, tiến trình thoát mã `0`), nên bạn không bao giờ biết có bao nhiêu việc thất bại.
 
 ## Liên hệ bài tập
 

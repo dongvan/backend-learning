@@ -99,6 +99,22 @@ Cách thông thường: dùng **overload** (Bài 7) cho chữ ký ngoài, hoặc
 
 **So sánh với PHP/Laravel.** PHP 8 có union type và `static`/template qua docblock PHPStan (`@template T`, `@return T is string ? ... : ...` kiểu conditional trong PHPStan/Psalm). Trong ngôn ngữ PHP không có. TS là ngôn ngữ chính thức hỗ trợ phép này.
 
+**Bảng ba hành vi đặc biệt của `T extends U ? X : Y`** (đã kiểm chứng):
+
+| `T` | `T extends string ? true : false` | Vì sao |
+|---|---|---|
+| `never` | `never` | union rỗng, không có thành viên nào để chạy |
+| `boolean` | `false` | `true` và `false` đều không extends `string` |
+| `any` | `boolean` | `any` cho cả hai nhánh: `true \| false` |
+| `string \| number` | `boolean` | phân phối: `true \| false` |
+| `unknown` | `false` | `unknown` không gán được cho `string` |
+
+Với `T extends true ? "y" : "n"`, `boolean` cho `"y" | "n"` vì `boolean` là `true | false` bị phân phối.
+
+**Trong nhánh true, `T` được thu hẹp.** `T extends string ? Uppercase<T> : never` hợp lệ vì trong nhánh true `T` được coi là `T & string`; tương tự `T extends { id: unknown } ? T["id"] : never`. Không cần `infer` chỉ để lấy một thuộc tính. Nhánh false thì không thu hẹp ngược.
+
+**Điều kiện `extends` là gán được: `readonly` không đổi kết quả, optional thì có.** `{ readonly a: 1 } extends { a: 1 }` là true, `{ a?: 1 } extends { a: 1 }` là false, `readonly string[] extends string[]` là false (chiều ngược lại true). `{}` nghĩa là "không phải null/undefined": `string extends {}` là true, `null extends {}` là false. Kiểm tra khoá optional: `{} extends Pick<T, K> ? true : false` (true khi `K` optional). Chi tiết và ví dụ ở file 05.
+
 ## Tricks & tips thực tế
 
 - **Phân biệt "biến đổi từng thành viên" và "kiểm tra cả union".** Lý do: cùng một chữ `extends` nhưng kết quả khác hẳn. Nếu thấy kết quả là union mà bạn tưởng là một giá trị, hoặc ngược lại, suspect đầu tiên là phân phối.
